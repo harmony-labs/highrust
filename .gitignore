@@ -1,0 +1,11 @@
+# Rust
+/target/
+*/target/
+Cargo.lock
+
+# Project specific folders and files
+.db/
+history.txt # created by surreal command with `make surreal-sql`
+
+# vendored child projects
+vendor/
