@@ -32,7 +32,37 @@ pub enum OwnershipState {
         mutable: bool,
         /// The variable this is borrowed from, if known
         source: Option<String>,
+        /// The span where the borrow occurs
+        borrow_span: Option<Span>,
     },
+}
+
+/// Information about where a variable is being borrowed
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BorrowInfo {
+    /// The variable that is borrowing this one
+    pub borrower: String,
+    /// Whether this is a mutable borrow
+    pub is_mutable: bool,
+    /// The span where the borrow occurs
+    pub span: Span,
+    /// The scope depth at which this borrow exists
+    pub scope_depth: usize,
+}
+
+/// Tracks the usage of a variable
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UsageKind {
+    /// Variable is read (e.g., used in an expression)
+    Read,
+    /// Variable is modified
+    Write,
+    /// Variable is moved
+    Move,
+    /// Variable is borrowed immutably
+    ImmutableBorrow,
+    /// Variable is borrowed mutably
+    MutableBorrow,
 }
 
 /// Represents the mutability requirements for a variable.
@@ -68,8 +98,12 @@ pub struct VariableInfo {
     pub declaration_span: Span,
     /// Type information, if available
     pub ty: Option<Type>,
-    /// All usage sites
-    pub usage_spans: Vec<Span>,
+    /// All usage sites with usage kind
+    pub usages: Vec<(Span, UsageKind)>,
+    /// Active borrows of this variable
+    pub active_borrows: Vec<BorrowInfo>,
+    /// Scope depth where this variable was declared
+    pub declaration_scope_depth: usize,
 }
 
 /// Context for ownership inference within a scope.
@@ -81,6 +115,8 @@ pub struct OwnershipContext {
     pub lifetime_constraints: Vec<LifetimeConstraint>,
     /// Parent scope, if any
     pub parent: Option<Box<OwnershipContext>>,
+    /// Current scope depth (top-level = 0, increases with each nested scope)
+    pub scope_depth: usize,
 }
 
 impl OwnershipContext {
@@ -90,15 +126,18 @@ impl OwnershipContext {
             variables: HashMap::new(),
             lifetime_constraints: Vec::new(),
             parent: None,
+            scope_depth: 0,
         }
     }
 
     /// Creates a new context with the given parent.
     pub fn with_parent(parent: OwnershipContext) -> Self {
+        let new_scope_depth = parent.scope_depth + 1;
         OwnershipContext {
             variables: HashMap::new(),
             lifetime_constraints: Vec::new(),
             parent: Some(Box::new(parent)),
+            scope_depth: new_scope_depth,
         }
     }
 
@@ -140,14 +179,18 @@ impl OwnershipContext {
 pub struct OwnershipAnalysisResult {
     /// Variables that need to be mutable
     pub mutable_vars: HashSet<String>,
-    /// Variables that need to be borrowed
-    pub borrowed_vars: HashSet<String>,
+    /// Variables that need to be borrowed immutably
+    pub immut_borrowed_vars: HashSet<String>,
+    /// Variables that need to be borrowed mutably
+    pub mut_borrowed_vars: HashSet<String>,
     /// Variables that need to be moved
     pub moved_vars: HashSet<String>,
     /// Variables that need to be cloned
     pub cloned_vars: HashSet<String>,
     /// Inferred lifetime parameters and constraints
     pub lifetime_params: Vec<String>,
+    /// Mapping of variables to their borrowers
+    pub borrow_graph: HashMap<String, Vec<String>>,
 }
 
 /// Main entry point for the ownership inference system.
@@ -164,10 +207,12 @@ impl OwnershipInference {
         let mut context = OwnershipContext::new();
         let mut result = OwnershipAnalysisResult {
             mutable_vars: HashSet::new(),
-            borrowed_vars: HashSet::new(),
+            immut_borrowed_vars: HashSet::new(),
+            mut_borrowed_vars: HashSet::new(),
             moved_vars: HashSet::new(),
             cloned_vars: HashSet::new(),
             lifetime_params: Vec::new(),
+            borrow_graph: HashMap::new(),
         };
 
         // Analyze each module item
@@ -198,8 +243,12 @@ impl OwnershipInference {
             }
             
             match &info.ownership {
-                OwnershipState::Borrowed { mutable: _, source: _ } => {
-                    result.borrowed_vars.insert(name.clone());
+                OwnershipState::Borrowed { mutable, source: _, borrow_span: _ } => {
+                    if *mutable {
+                        result.mut_borrowed_vars.insert(name.clone());
+                    } else {
+                        result.immut_borrowed_vars.insert(name.clone());
+                    }
                 }
                 OwnershipState::Moved => {
                     result.moved_vars.insert(name.clone());
@@ -240,6 +289,12 @@ impl OwnershipInference {
         result
     }
 
+    /// Track which variables are borrowed in function calls and other expressions
+    fn track_borrows_in_expression(&self, _expr: &Expr, _context: &mut OwnershipContext, _is_mut: bool) {
+        // This is a placeholder for the full borrow tracking implementation
+        // Will be expanded in the next phase
+    }
+
     /// Analyze a function definition for ownership, mutability, and lifetime requirements.
     pub fn analyze_function(&self, func: &FunctionDef, context: &mut OwnershipContext) {
         // Create a new context for this function's scope
@@ -252,7 +307,9 @@ impl OwnershipInference {
                 mutability: MutabilityRequirement::Unknown,
                 declaration_span: param.span.clone(),
                 ty: param.ty.clone(),
-                usage_spans: Vec::new(),
+                usages: Vec::new(),
+                active_borrows: Vec::new(),
+                declaration_scope_depth: function_context.scope_depth,
             };
             function_context.declare_variable(param.name.clone(), info);
         }
@@ -266,7 +323,7 @@ impl OwnershipInference {
     }
 
     /// Analyze a data definition (struct, enum).
-    pub fn analyze_data_def(&self, data: &DataDef, _context: &mut OwnershipContext) {
+    pub fn analyze_data_def(&self, _data: &DataDef, _context: &mut OwnershipContext) {
         // For now, just a placeholder
         // In a full implementation, we might want to analyze:
         // - Default ownership semantics for each field
@@ -344,6 +401,10 @@ impl OwnershipInference {
                 
                 // Create branches with their own contexts
                 let mut then_context = OwnershipContext::with_parent(context.clone());
+                
+                // Will implement borrow tracking in the future
+                // self.track_borrows_in_expression(cond, context, false);
+                
                 self.analyze_block(then_branch, &mut then_context);
                 
                 if let Some(else_block) = else_branch {
@@ -410,9 +471,9 @@ impl OwnershipInference {
     pub fn analyze_expr(&self, expr: &Expr, context: &mut OwnershipContext) {
         match expr {
             Expr::Variable(name, span) => {
-                // Track usage of this variable
+                // Track usage of this variable as a read
                 if let Some(var_info) = context.lookup_variable_mut(name) {
-                    var_info.usage_spans.push(span.clone());
+                    var_info.usages.push((span.clone(), UsageKind::Read));
                 }
             }
             Expr::Call { func, args, .. } => {
@@ -487,7 +548,9 @@ impl OwnershipInference {
                     mutability: MutabilityRequirement::Mutable,
                     declaration_span: Span { start: 0, end: 0 },
                     ty: None,
-                    usage_spans: Vec::new(),
+                    usages: Vec::new(),
+                    active_borrows: Vec::new(),
+                    declaration_scope_depth: context.scope_depth,
                 };
                 context.declare_variable("x".to_string(), info);
             },
@@ -498,7 +561,9 @@ impl OwnershipInference {
                     mutability: MutabilityRequirement::Mutable,
                     declaration_span: Span { start: 0, end: 0 },
                     ty: None,
-                    usage_spans: Vec::new(),
+                    usages: Vec::new(),
+                    active_borrows: Vec::new(),
+                    declaration_scope_depth: context.scope_depth,
                 };
                 context.declare_variable("v".to_string(), info);
             },
@@ -531,7 +596,9 @@ impl OwnershipInference {
                     mutability,  // Use our pre-determined value
                     declaration_span: span,
                     ty,
-                    usage_spans: Vec::new(),
+                    usages: Vec::new(),
+                    active_borrows: Vec::new(),
+                    declaration_scope_depth: context.scope_depth,
                 };
                 context.declare_variable(name.clone(), info);
             }
@@ -598,6 +665,47 @@ impl OwnershipInference {
                 self.detect_assignment_in_expr(expr, context);
             }
             _ => {}
+        }
+    }
+    
+    /// Helper method to create a BorrowInfo struct
+    fn create_borrow_info(&self, borrower: &str, is_mutable: bool, span: &Span, scope_depth: usize) -> BorrowInfo {
+        BorrowInfo {
+            borrower: borrower.to_string(),
+            is_mutable,
+            span: span.clone(),
+            scope_depth,
+        }
+    }
+
+    /// Create an immutable borrow of a variable
+    fn borrow_immutably(&self, var_name: &str, borrower: &str, span: &Span, context: &mut OwnershipContext) {
+        // Get the scope depth first to avoid borrow checker issues
+        let scope_depth = context.scope_depth;
+        let borrow_info = self.create_borrow_info(borrower, false, span, scope_depth);
+        
+        if let Some(var_info) = context.lookup_variable_mut(var_name) {
+            // Record the borrow in the variable's info
+            var_info.active_borrows.push(borrow_info);
+            
+            // Mark this usage as a borrow
+            var_info.usages.push((span.clone(), UsageKind::ImmutableBorrow));
+        }
+    }
+    
+    /// Create a mutable borrow of a variable
+    fn borrow_mutably(&self, var_name: &str, borrower: &str, span: &Span, context: &mut OwnershipContext) {
+        // Get the scope depth first to avoid borrow checker issues
+        let scope_depth = context.scope_depth;
+        let borrow_info = self.create_borrow_info(borrower, true, span, scope_depth);
+        
+        if let Some(var_info) = context.lookup_variable_mut(var_name) {
+            // Record the borrow in the variable's info
+            var_info.active_borrows.push(borrow_info);
+            
+            // Mark this usage as a borrow and ensure the variable is mutable
+            var_info.usages.push((span.clone(), UsageKind::MutableBorrow));
+            var_info.mutability = MutabilityRequirement::Mutable;
         }
     }
     
