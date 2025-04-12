@@ -8,9 +8,9 @@ use highrust_transpiler::{
     parser::parse,
     lowering::{lower_module, lower_function, lower_stmt, lower_expr, LoweredModule},
     codegen::CodegenContext,
-    ownership::{OwnershipAnalysisResult, OwnershipInference},
+    ownership::OwnershipAnalysisResult,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[test]
 fn test_parser_minimal() {
@@ -78,10 +78,14 @@ fn test_lowering_entry_points() {
     // Create a mock ownership analysis result for testing
     let mock_analysis = OwnershipAnalysisResult {
         mutable_vars: HashSet::new(),
-        borrowed_vars: HashSet::new(),
+        immut_borrowed_vars: HashSet::new(),
+        mut_borrowed_vars: HashSet::new(),
         moved_vars: HashSet::new(),
         cloned_vars: HashSet::new(),
         lifetime_params: Vec::new(),
+        borrow_graph: HashMap::new(),
+        string_converted_vars: HashSet::new(),
+        string_converted_exprs: HashSet::new(),
     };
     
     // Call lowering functions and ensure they return something

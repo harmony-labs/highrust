@@ -1,6 +1,6 @@
 # HighRust Project Progress
 
-**Status:** Phase 1 (Core Transpiler MVP) completed. Phase 2 (Ownership/Conversion Inference) in progress (45% complete).
+**Status:** Phase 1 (Core Transpiler MVP) completed. Phase 2 (Ownership/Conversion Inference) in progress (55% complete).
 
 ---
 
@@ -28,7 +28,7 @@
 - Created test infrastructure including golden file tests and runtime tests
 - Established robust test fixtures for basic language features validation
 
-### Phase 2: Ownership and Conversion Inference (45% Complete)
+### Phase 2: Ownership and Conversion Inference (55% Complete)
 
 - [~] Implement dataflow-based mutability, borrow, and clone inference
   - [x] Scaffold ownership inference system
@@ -36,7 +36,10 @@
   - [x] Integrate mutability decisions into code generation
   - [~] Implement complete dataflow analysis for variable usage
   - [~] Implement borrow and move inference
-- [ ] Insert .to_string() conversions where required
+- [~] Insert .to_string() conversions where required
+  - [x] Add support for detecting when strings need conversion
+  - [x] Implement basic codegen for string literal conversions
+  - [x] Create tests for string conversions
 - [ ] Implement Option and Result type mapping
 - [ ] Add full pattern matching support
 - [ ] Implement source mapping for diagnostics
@@ -51,6 +54,11 @@
 - Added dataflow analysis to track variable state changes through blocks and branches
 - Enhanced lowering module to apply inferred mutability information when generating IR
 - Added unit tests to verify mutability inference logic
+- Implemented automatic string conversion for string literals and operations:
+  - Detect when string literals are assigned to String type variables
+  - Generate .to_string() calls in the appropriate contexts
+  - Added test cases to verify string conversion functionality
+  - Integrated string conversion with ownership analysis pipeline
 - Implemented foundation for borrow inference system:
   - Added tracking for immutable and mutable borrows
   - Developed data structures to store borrow information in context

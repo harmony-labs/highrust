@@ -145,8 +145,8 @@ mod tests {
             cloned_vars: HashSet::new(),
             lifetime_params: Vec::new(),
             borrow_graph: HashMap::new(),
-            lifetime_params: Vec::new(),
-            borrow_graph: HashMap::new(),
+            string_converted_vars: HashSet::new(),
+            string_converted_exprs: HashSet::new(),
         };
 
         // Call lowering functions

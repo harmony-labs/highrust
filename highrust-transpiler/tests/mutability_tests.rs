@@ -74,7 +74,7 @@ fn test_variable_reassignment_mutability() {
     
     // Additionally, verify the generated code
     let lowered = lower_module(&module).unwrap();
-    let mut ctx = CodegenContext::new();
+    let mut ctx = CodegenContext::with_analysis(analysis_result);
     let code = generate_rust_code(&lowered, &mut ctx).unwrap();
     
     // Check that the code contains "let mut x"
@@ -146,7 +146,7 @@ fn test_method_call_mutability() {
     
     // Additionally, verify the generated code
     let lowered = lower_module(&module).unwrap();
-    let mut ctx = CodegenContext::new();
+    let mut ctx = CodegenContext::with_analysis(analysis_result);
     let code = generate_rust_code(&lowered, &mut ctx).unwrap();
     
     // Check that the code contains "let mut v"

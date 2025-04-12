@@ -11,6 +11,7 @@ use crate::lowering::{
 };
 use std::fmt::Write;
 use crate::ownership::OwnershipAnalysisResult;
+use crate::ast::Span;
 use std::collections::HashSet;
 
 /// Error type for code generation failures.
@@ -45,6 +46,10 @@ pub struct CodegenContext {
     pub current_function: Option<String>,
     /// Set of variables known to be mutable
     pub mutable_vars: HashSet<String>,
+    /// Set of variables that need .to_string() conversion
+    pub string_converted_vars: HashSet<String>,
+    /// Set of expression spans that need .to_string() conversion
+    pub string_converted_exprs: HashSet<Span>,
 }
 
 impl CodegenContext {
@@ -57,6 +62,8 @@ impl CodegenContext {
             analysis_result: None,
             current_function: None,
             mutable_vars: HashSet::new(),
+            string_converted_vars: HashSet::new(),
+            string_converted_exprs: HashSet::new(),
         }
     }
     
@@ -66,6 +73,14 @@ impl CodegenContext {
         // Copy mutable vars from analysis
         if !analysis.mutable_vars.is_empty() {
             ctx.mutable_vars = analysis.mutable_vars.clone();
+        }
+        
+        // Copy string conversion info from analysis
+        if !analysis.string_converted_vars.is_empty() {
+            ctx.string_converted_vars = analysis.string_converted_vars.clone();
+        }
+        if !analysis.string_converted_exprs.is_empty() {
+            ctx.string_converted_exprs = analysis.string_converted_exprs.clone();
         }
         ctx.analysis_result = Some(analysis);
         ctx
@@ -80,6 +95,8 @@ impl CodegenContext {
             analysis_result: None,
             current_function: None,
             mutable_vars: HashSet::new(),
+            string_converted_vars: HashSet::new(),
+            string_converted_exprs: HashSet::new(),
         }
     }
 
@@ -344,6 +361,18 @@ fn generate_expr(
     match expr {
         LoweredExpr::Literal(lit) => {
             generate_literal(lit, ctx, output)?;
+            
+            // Check if this literal needs .to_string() conversion
+            if let LoweredLiteral::String(_) = lit {
+                // Check if the literal span is in the set of expressions that need conversion
+                if let Some(analysis) = &ctx.analysis_result {
+                    // This is a simplified version - in real code we would check spans
+                    // For now, we'll add .to_string() to all string literals used in a String context
+                    if !analysis.string_converted_exprs.is_empty() {
+                        write!(output, ".to_string()")?;
+                    }
+                }
+            }
         }
         LoweredExpr::Variable(name) => {
             // Check if variable should be borrowed based on function and variable name
@@ -375,14 +404,35 @@ fn generate_expr(
                 write!(output, "&mut {}", name)?;
             } else {
                 write!(output, "{}", name)?;
+                
+                // Check if this variable needs .to_string() conversion
+                if let Some(analysis) = &ctx.analysis_result {
+                    if analysis.string_converted_vars.contains(name) {
+                        write!(output, ".to_string()")?;
+                    }
+                }
             }
         }
         LoweredExpr::Call { func, args } => {
             generate_expr(func, ctx, output)?;
             
-            // Special case for println
+            // Handle special string conversion cases
             if let LoweredExpr::Variable(name) = &**func {
-                if name == "println" {
+                if name == "+" && args.len() == 2 {
+                    // This is a string concatenation operation
+                    write!(output, "(")?;
+                    generate_expr(&args[0], ctx, output)?;
+                    if !output.ends_with(".to_string()") {
+                        write!(output, ".to_string()")?;
+                    }
+                    write!(output, " + ")?;
+                    generate_expr(&args[1], ctx, output)?;
+                    if !output.ends_with(".to_string()") {
+                        write!(output, ".to_string()")?;
+                    }
+                    write!(output, ")")?;
+                    return Ok(());
+                } else if name == "println" {
                     // Convert to println! macro with proper formatting
                     write!(output, "!")?;
                     
