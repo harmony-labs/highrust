@@ -1,0 +1,13 @@
+// Demonstrates variables and basic expressions in HighRust
+
+fn calculate_area(width, height) {
+    let area = width * height;
+    return area;
+}
+
+fn main() {
+    let x = 5;
+    let y = 10;
+    let result = calculate_area(x, y);
+    println("The area is: ${result}");
+}

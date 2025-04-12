@@ -1,0 +1,5 @@
+// A simple Hello World program in HighRust
+
+fn main() {
+    println("Hello, World!");
+}

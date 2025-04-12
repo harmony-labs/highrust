@@ -44,7 +44,7 @@ impl CodegenContext {
 /// let ctx = CodegenContext::new();
 /// let rust_code = generate_rust_code(&ir, &ctx);
 /// ```
-pub fn generate_rust_code(ir: &LoweredIr, ctx: &CodegenContext) -> String {
+pub fn generate_rust_code(_ir: &LoweredIr, _ctx: &CodegenContext) -> String {
     // TODO: Implement code generation logic
     String::new()
 }

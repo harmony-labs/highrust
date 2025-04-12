@@ -135,16 +135,16 @@ release:
 # If you want tests in tests/ to be run as unit tests, they must be moved into src/ as #[cfg(test)] modules.
 
 test:
-	RUST_BACKTRACE=$(RUST_BACKTRACE) RUST_LOG=error cargo test --target $(TARGET) $(TEST) -- --nocapture --test-threads=1 $(if $(CAPTURE),| $(CONTREE_CMD),)
+	RUST_BACKTRACE=$(RUST_BACKTRACE) RUST_LOG=error cargo test --target $(TARGET) $(TEST) --workspace -- --nocapture --test-threads=1 $(if $(CAPTURE),| $(CONTREE_CMD),)
 
 test-verbose:
-	RUST_BACKTRACE=$(RUST_BACKTRACE) RUST_LOG=$(RUST_LOG) cargo test --target $(TARGET) $(TEST) -- --nocapture --test-threads=1 $(if $(CAPTURE),| $(CONTREE_CMD),)
+	RUST_BACKTRACE=$(RUST_BACKTRACE) RUST_LOG=$(RUST_LOG) cargo test --target $(TARGET) $(TEST) --workspace -- --nocapture --test-threads=1 $(if $(CAPTURE),| $(CONTREE_CMD),)
 
 test-list:
 	RUST_BACKTRACE=$(RUST_BACKTRACE) RUST_LOG=$(RUST_LOG) cargo test --target $(TARGET) -- --list $(if $(CAPTURE),| $(CONTREE_CMD),)
 
 test-integration:
-	RUST_BACKTRACE=$(RUST_BACKTRACE) RUST_LOG=error cargo test --test '*' --target $(TARGET) $(TEST) -- --nocapture --test-threads=1 $(if $(CAPTURE),| $(CONTREE_CMD),)
+	RUST_BACKTRACE=$(RUST_BACKTRACE) RUST_LOG=error cargo test --test '*' --target $(TARGET) --workspace $(TEST) -- --nocapture --test-threads=1 $(if $(CAPTURE),| $(CONTREE_CMD),)
 
 test-integration-verbose:
-	RUST_BACKTRACE=$(RUST_BACKTRACE) RUST_LOG=$(RUST_LOG) cargo test --test '*' --target $(TARGET) $(TEST) -- --nocapture --test-threads=1 $(if $(CAPTURE),| $(CONTREE_CMD),)
+	RUST_BACKTRACE=$(RUST_BACKTRACE) RUST_LOG=$(RUST_LOG) cargo test --test '*' --target $(TARGET) --workspace $(TEST) -- --nocapture --test-threads=1 $(if $(CAPTURE),| $(CONTREE_CMD),)
