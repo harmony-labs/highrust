@@ -251,8 +251,13 @@ fn generate_stmt(
     output: &mut String,
 ) -> Result<(), CodegenError> {
     match stmt {
-        LoweredStmt::Let { name, value, ty } => {
-            write!(output, "{}let {}", ctx.indent(), name)?;
+        LoweredStmt::Let { name, value, ty, mutable } => {
+            // Add the 'mut' keyword if the variable is inferred to be mutable
+            if *mutable {
+                write!(output, "{}let mut {}", ctx.indent(), name)?;
+            } else {
+                write!(output, "{}let {}", ctx.indent(), name)?;
+            }
             
             if let Some(ty) = ty {
                 write!(output, ": ")?;

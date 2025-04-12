@@ -91,11 +91,12 @@ fn main() {
                             
                             /// Formats a TranspilerError for user-friendly output.
                             fn format_transpiler_error(e: &TranspilerError) -> String {
-                                match e {
-                                    TranspilerError::ParseError(msg) => format!("Parse error: {}", msg),
-                                    TranspilerError::LoweringError(le) => format!("Lowering error: {:?}", le),
-                                    TranspilerError::CodegenError(ce) => format!("Codegen error: {:?}", ce),
-                                    TranspilerError::IoError(ioe) => format!("I/O error: {}", ioe),
+                                match *e {
+                                    TranspilerError::ParseError(ref msg) => format!("Parse error: {}", msg),
+                                    TranspilerError::LoweringError(ref le) => format!("Lowering error: {:?}", le),
+                                    TranspilerError::CodegenError(ref ce) => format!("Codegen error: {:?}", ce),
+                                    TranspilerError::OwnershipError(ref oe) => format!("Ownership error: {:?}", oe),
+                                    TranspilerError::IoError(ref ioe) => format!("I/O error: {}", ioe),
                                 }
                             }
         }

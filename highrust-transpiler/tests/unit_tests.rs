@@ -8,7 +8,9 @@ use highrust_transpiler::{
     parser::parse,
     lowering::{lower_module, lower_function, lower_stmt, lower_expr, LoweredModule},
     codegen::CodegenContext,
+    ownership::{OwnershipAnalysisResult, OwnershipInference},
 };
+use std::collections::HashSet;
 
 #[test]
 fn test_parser_minimal() {
@@ -55,7 +57,7 @@ fn test_lowering_entry_points() {
     // Test that the lowering functions don't panic with simple input
     let span = Span { start: 0, end: 0 };
     
-    let module = Module { 
+    let module = Module {
         items: vec![],
         span: span.clone(),
     };
@@ -73,11 +75,20 @@ fn test_lowering_entry_points() {
     let stmt = Stmt::Expr(Expr::Literal(Literal::Int(42), span.clone()));
     let expr = Expr::Literal(Literal::Int(42), span);
     
+    // Create a mock ownership analysis result for testing
+    let mock_analysis = OwnershipAnalysisResult {
+        mutable_vars: HashSet::new(),
+        borrowed_vars: HashSet::new(),
+        moved_vars: HashSet::new(),
+        cloned_vars: HashSet::new(),
+        lifetime_params: Vec::new(),
+    };
+    
     // Call lowering functions and ensure they return something
     let _lowered_module = lower_module(&module);
-    let _lowered_function = lower_function(&func);
-    let _lowered_stmt = lower_stmt(&stmt);
-    let _lowered_expr = lower_expr(&expr);
+    let _lowered_function = lower_function(&func, &mock_analysis);
+    let _lowered_stmt = lower_stmt(&stmt, &mock_analysis);
+    let _lowered_expr = lower_expr(&expr, &mock_analysis);
     
     // Currently nothing to assert beyond they don't panic,
     // as the lowering functions return stub implementations
