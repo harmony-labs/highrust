@@ -2,14 +2,14 @@
 
 ## Phase 1: Core Transpiler MVP
 
-**Percent complete: 17% (1.5/9 tasks)**
+**Percent complete: 28% (2.5/9 tasks)**
 
 - [ ] Implement parser for HighRust syntax
 - [x] Build Abstract Syntax Tree (AST) generation
 - [ ] Implement basic lowering from AST to intermediate representation
 - [ ] Develop working code generator: transpile .hrs files to .rs files
   - [x] Initial codegen module skeleton
-- [ ] Create minimal CLI for transpilation
+- [x] Create minimal CLI for transpilation
 - [ ] Implement file watcher for automatic transpilation
 - [ ] Develop initial test suite
   - [ ] Add golden file tests
