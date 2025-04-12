@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+mod watcher;
+
 /// HighRust Transpiler CLI
 #[derive(Parser)]
 #[command(
@@ -26,6 +28,12 @@ enum Commands {
     },
     /// Print version information
     Version,
+    /// Watch source files and trigger transpilation on changes (scaffold)
+    Watch {
+        /// Path to the source directory or file to watch
+        #[arg(short, long)]
+        path: String,
+    },
 }
 
 fn main() {
@@ -42,6 +50,18 @@ fn main() {
         Commands::Version => {
             // This will print the version from Cargo.toml via clap
             println!("HighRust CLI version {}", env!("CARGO_PKG_VERSION"));
+        }
+        Commands::Watch { path } => {
+            println!(
+                "Watch command scaffold invoked. Path: {}",
+                path
+            );
+            // This is a scaffold for the file watcher.
+            // When fully implemented, this will start watching the given path for changes
+            // and trigger transpilation as needed.
+            // See watcher.rs for the watcher implementation.
+            let mut watcher = watcher::Watcher::new(/* In the future: vec![PathBuf::from(path)] */);
+            let _ = watcher.watch();
         }
     }
 }

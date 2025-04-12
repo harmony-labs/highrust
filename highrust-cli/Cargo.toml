@@ -7,3 +7,4 @@ authors = ["HighRust Core Engineering"]
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 highrust-transpiler = { path = "../highrust-transpiler" }
+notify = "6"
