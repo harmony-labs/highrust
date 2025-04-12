@@ -2,6 +2,10 @@ use clap::{Parser, Subcommand};
 
 mod watcher;
 
+use highrust_transpiler::{transpile_file, transpile_source, TranspilerError};
+use std::process;
+use std::fs;
+
 /// HighRust Transpiler CLI
 #[derive(Parser)]
 #[command(
@@ -45,7 +49,55 @@ fn main() {
                 "Transpile command invoked. Input: {}, Output: {:?}",
                 input, output
             );
-            // TODO: Call into highrust-transpiler library to perform transpilation
+                            // Run the transpiler pipeline
+                            let input_path = input;
+                            match output {
+                                Some(output_path) => {
+                                    // Output to file
+                                    match transpile_file(input_path, output_path) {
+                                        Ok(()) => {
+                                            println!(
+                                                "Transpilation succeeded. Rust code written to '{}'.",
+                                                output_path
+                                            );
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Transpilation failed: {}", format_transpiler_error(&e));
+                                            process::exit(1);
+                                        }
+                                    }
+                                }
+                                None => {
+                                    // Output to stdout
+                                    match fs::read_to_string(input_path) {
+                                        Ok(source) => {
+                                            match transpile_source(&source) {
+                                                Ok(rust_code) => {
+                                                    println!("{}", rust_code);
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("Transpilation failed: {}", format_transpiler_error(&e));
+                                                    process::exit(1);
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Failed to read input file '{}': {}", input_path, e);
+                                            process::exit(1);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            /// Formats a TranspilerError for user-friendly output.
+                            fn format_transpiler_error(e: &TranspilerError) -> String {
+                                match e {
+                                    TranspilerError::ParseError(msg) => format!("Parse error: {}", msg),
+                                    TranspilerError::LoweringError(le) => format!("Lowering error: {}", le),
+                                    TranspilerError::CodegenError(ce) => format!("Codegen error: {}", ce),
+                                    TranspilerError::IoError(ioe) => format!("I/O error: {}", ioe),
+                                }
+                            }
         }
         Commands::Version => {
             // This will print the version from Cargo.toml via clap
