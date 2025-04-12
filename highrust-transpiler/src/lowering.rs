@@ -1,76 +1,253 @@
+#![allow(dead_code)]
 //! Lowering logic for HighRust AST to intermediate representation (IR).
 //!
-//! This module provides the entry points for transforming HighRust AST nodes
-//! (as defined in `ast.rs`) into a lower-level intermediate representation (IR).
-//! The lowering phase performs desugaring and prepares the AST for code generation.
-//!
-//! This is the initial scaffolding for the lowering module. Actual lowering logic
-//! will be implemented in future phases.
+//! This module transforms HighRust AST nodes (as defined in `ast.rs`) into a lower-level
+//! intermediate representation (IR). The lowering phase performs desugaring and prepares
+//! the AST for code generation.
 
 use crate::ast::{
-    Module, FunctionDef, Stmt, Expr,
+    Module, ModuleItem, FunctionDef, DataDef, DataKind, Field, EnumVariant, Stmt, Expr, Literal, Type, Block, Param, Pattern,
 };
+use std::collections::HashMap;
 
-/// Placeholder for the lowered module IR.
-/// TODO: Define the actual IR structure in future phases.
-pub struct LoweredModule;
-
-/// Placeholder for the lowered function IR.
-/// TODO: Define the actual IR structure in future phases.
-pub struct LoweredFunction;
-
-/// Placeholder for the lowered statement IR.
-/// TODO: Define the actual IR structure in future phases.
-pub struct LoweredStmt;
-
-/// Placeholder for the lowered expression IR.
-/// TODO: Define the actual IR structure in future phases.
-pub struct LoweredExpr;
-
-/// Lowers a HighRust AST module to the intermediate representation (IR).
-///
-/// # Arguments
-/// * `module` - The parsed HighRust AST module.
-///
-/// # Returns
-/// A lowered module IR (placeholder).
-pub fn lower_module(_module: &Module) -> LoweredModule {
-    // TODO: Implement lowering logic for modules
-    LoweredModule
+/// Error type for lowering failures.
+#[derive(Debug)]
+pub enum LoweringError {
+    UnsupportedFeature(&'static str),
+    InvalidAst(String),
+    // Add more as needed
 }
 
-/// Lowers a HighRust AST function definition to the IR.
-///
-/// # Arguments
-/// * `func` - The AST function definition.
-///
-/// # Returns
-/// A lowered function IR (placeholder).
-pub fn lower_function(_func: &FunctionDef) -> LoweredFunction {
-    // TODO: Implement lowering logic for functions
-    LoweredFunction
+/// The lowered module IR.
+#[derive(Debug)]
+pub struct LoweredModule {
+    pub items: Vec<LoweredItem>,
 }
 
-/// Lowers a HighRust AST statement to the IR.
-///
-/// # Arguments
-/// * `stmt` - The AST statement.
-///
-/// # Returns
-/// A lowered statement IR (placeholder).
-pub fn lower_stmt(_stmt: &Stmt) -> LoweredStmt {
-    // TODO: Implement lowering logic for statements
-    LoweredStmt
+/// Lowered top-level items.
+#[derive(Debug)]
+pub enum LoweredItem {
+    Function(LoweredFunction),
+    Data(LoweredData),
+    // TODO: Add Import, Export, EmbeddedRust as needed
 }
 
-/// Lowers a HighRust AST expression to the IR.
-///
-/// # Arguments
-/// * `expr` - The AST expression.
-///
-/// # Returns
-/// A lowered expression IR (placeholder).
-pub fn lower_expr(_expr: &Expr) -> LoweredExpr {
-    // TODO: Implement lowering logic for expressions
-    LoweredExpr
+/// Lowered data type (struct, enum).
+#[derive(Debug)]
+pub struct LoweredData {
+    pub name: String,
+    pub kind: LoweredDataKind,
+}
+
+#[derive(Debug)]
+pub enum LoweredDataKind {
+    Struct(Vec<LoweredField>),
+    Enum(Vec<LoweredEnumVariant>),
+    // TaggedUnion not yet supported
+}
+
+#[derive(Debug)]
+pub struct LoweredField {
+    pub name: String,
+    pub ty: LoweredType,
+}
+
+#[derive(Debug)]
+pub struct LoweredEnumVariant {
+    pub name: String,
+    pub fields: Vec<LoweredField>,
+}
+
+/// Lowered function definition.
+#[derive(Debug)]
+pub struct LoweredFunction {
+    pub name: String,
+    pub params: Vec<LoweredParam>,
+    pub ret_type: Option<LoweredType>,
+    pub body: LoweredBlock,
+    pub is_async: bool,
+}
+
+#[derive(Debug)]
+pub struct LoweredParam {
+    pub name: String,
+    pub ty: Option<LoweredType>,
+}
+
+#[derive(Debug)]
+pub struct LoweredBlock {
+    pub stmts: Vec<LoweredStmt>,
+}
+
+#[derive(Debug)]
+pub enum LoweredStmt {
+    Let {
+        name: String,
+        value: LoweredExpr,
+        ty: Option<LoweredType>,
+    },
+    Expr(LoweredExpr),
+    Return(Option<LoweredExpr>),
+    // TODO: If, While, For, Match, etc.
+}
+
+#[derive(Debug)]
+pub enum LoweredExpr {
+    Literal(LoweredLiteral),
+    Variable(String),
+    Call {
+        func: Box<LoweredExpr>,
+        args: Vec<LoweredExpr>,
+    },
+    Block(LoweredBlock),
+    // TODO: FieldAccess, Await, Comprehension, etc.
+}
+
+#[derive(Debug)]
+pub enum LoweredLiteral {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    String(String),
+    Null,
+}
+
+#[derive(Debug)]
+pub enum LoweredType {
+    Named(String, Vec<LoweredType>),
+    Tuple(Vec<LoweredType>),
+    Array(Box<LoweredType>),
+    // TODO: Function types, generics, etc.
+}
+
+/// Entry point: Lower a HighRust AST module to IR.
+pub fn lower_module(module: &Module) -> Result<LoweredModule, LoweringError> {
+    let mut items = Vec::new();
+    for item in &module.items {
+        match item {
+            ModuleItem::Function(func) => {
+                items.push(LoweredItem::Function(lower_function(func)?));
+            }
+            ModuleItem::Data(data) => {
+                items.push(LoweredItem::Data(lower_data(data)?));
+            }
+            // Ignore Import, Export, EmbeddedRust for now
+            _ => {}
+        }
+    }
+    Ok(LoweredModule { items })
+}
+
+fn lower_data(data: &DataDef) -> Result<LoweredData, LoweringError> {
+    let kind = match &data.kind {
+        DataKind::Struct(fields) => {
+            LoweredDataKind::Struct(fields.iter().map(lower_field).collect::<Result<_,_>>()?)
+        }
+        DataKind::Enum(variants) => {
+            LoweredDataKind::Enum(variants.iter().map(lower_enum_variant).collect::<Result<_,_>>()?)
+        }
+        DataKind::TaggedUnion(_) => {
+            return Err(LoweringError::UnsupportedFeature("TaggedUnion lowering not implemented"))
+        }
+    };
+    Ok(LoweredData {
+        name: data.name.clone(),
+        kind,
+    })
+}
+
+fn lower_field(field: &Field) -> Result<LoweredField, LoweringError> {
+    Ok(LoweredField {
+        name: field.name.clone(),
+        ty: lower_type(&field.ty)?,
+    })
+}
+
+fn lower_enum_variant(variant: &EnumVariant) -> Result<LoweredEnumVariant, LoweringError> {
+    Ok(LoweredEnumVariant {
+        name: variant.name.clone(),
+        fields: variant.fields.iter().map(lower_field).collect::<Result<_,_>>()?,
+    })
+}
+
+pub fn lower_function(func: &FunctionDef) -> Result<LoweredFunction, LoweringError> {
+    Ok(LoweredFunction {
+        name: func.name.clone(),
+        params: func.params.iter().map(lower_param).collect(),
+        ret_type: func.ret_type.as_ref().map(lower_type).transpose()?,
+        body: lower_block(&func.body)?,
+        is_async: func.is_async,
+    })
+}
+
+fn lower_param(param: &Param) -> LoweredParam {
+    LoweredParam {
+        name: param.name.clone(),
+        ty: param.ty.as_ref().map(|t| lower_type(t).unwrap_or(LoweredType::Named("Unknown".into(), vec![]))),
+    }
+}
+
+fn lower_block(block: &Block) -> Result<LoweredBlock, LoweringError> {
+    let mut stmts = Vec::new();
+    for stmt in &block.stmts {
+        stmts.push(lower_stmt(stmt)?);
+    }
+    Ok(LoweredBlock { stmts })
+}
+
+pub fn lower_stmt(stmt: &Stmt) -> Result<LoweredStmt, LoweringError> {
+    match stmt {
+        Stmt::Let { pattern, value, ty, .. } => {
+            let name = match pattern {
+                Pattern::Variable(n, _) => n.clone(),
+                _ => return Err(LoweringError::UnsupportedFeature("Destructuring patterns in let")),
+            };
+            Ok(LoweredStmt::Let {
+                name,
+                value: lower_expr(value)?,
+                ty: ty.as_ref().map(lower_type).transpose()?,
+            })
+        }
+        Stmt::Expr(expr) => Ok(LoweredStmt::Expr(lower_expr(expr)?)),
+        Stmt::Return(opt_expr, _) => Ok(LoweredStmt::Return(opt_expr.as_ref().map(|e| lower_expr(e)).transpose()?)),
+        // TODO: If, While, For, Match, etc.
+        _ => Err(LoweringError::UnsupportedFeature("Statement type not yet supported")),
+    }
+}
+
+pub fn lower_expr(expr: &Expr) -> Result<LoweredExpr, LoweringError> {
+    match expr {
+        Expr::Literal(lit, _) => Ok(LoweredExpr::Literal(lower_literal(lit))),
+        Expr::Variable(name, _) => Ok(LoweredExpr::Variable(name.clone())),
+        Expr::Call { func, args, .. } => Ok(LoweredExpr::Call {
+            func: Box::new(lower_expr(func)?),
+            args: args.iter().map(lower_expr).collect::<Result<_,_>>()?,
+        }),
+        Expr::Block(block) => Ok(LoweredExpr::Block(lower_block(block)?)),
+        // TODO: FieldAccess, Await, Comprehension, Try, etc.
+        _ => Err(LoweringError::UnsupportedFeature("Expression type not yet supported")),
+    }
+}
+
+fn lower_literal(lit: &Literal) -> LoweredLiteral {
+    match lit {
+        Literal::Int(i) => LoweredLiteral::Int(*i),
+        Literal::Float(f) => LoweredLiteral::Float(*f),
+        Literal::Bool(b) => LoweredLiteral::Bool(*b),
+        Literal::String(s) => LoweredLiteral::String(s.clone()),
+        Literal::Null => LoweredLiteral::Null,
+    }
+}
+
+fn lower_type(ty: &Type) -> Result<LoweredType, LoweringError> {
+    match ty {
+        Type::Named(name, params) => Ok(LoweredType::Named(
+            name.clone(),
+            params.iter().map(lower_type).collect::<Result<_,_>>()?,
+        )),
+        Type::Tuple(types) => Ok(LoweredType::Tuple(types.iter().map(lower_type).collect::<Result<_,_>>()?)),
+        Type::Array(inner) => Ok(LoweredType::Array(Box::new(lower_type(inner)?))),
+        // TODO: Function types, generics, etc.
+        _ => Err(LoweringError::UnsupportedFeature("Type not yet supported")),
+    }
 }
