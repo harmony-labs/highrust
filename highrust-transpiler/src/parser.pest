@@ -1,143 +1,32 @@
-// HighRust Grammar Rules
+// HighRust Grammar Rules (MVP for function call statements)
 
-// Whitespace and Comments
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* ~ ("\n" | EOI) | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 // Identifiers and Literals
 identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
-int_literal = @{ "-"? ~ ASCII_DIGIT+ }
-float_literal = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* }
 string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-bool_literal = @{ "true" | "false" }
-null_literal = @{ "null" }
 
-literal = { float_literal | int_literal | string_literal | bool_literal | null_literal }
-
-// Types
-type_name = { identifier ~ ("<" ~ type_expr ~ ("," ~ type_expr)* ~ ">")? }
-type_expr = { 
-    type_name |
-    "[" ~ type_expr ~ "]" |  // Array type
-    "(" ~ type_expr ~ ("," ~ type_expr)* ~ ")" |  // Tuple type
-    "fn" ~ "(" ~ (type_expr ~ ("," ~ type_expr)*)? ~ ")" ~ ("=>" ~ type_expr)?  // Function type
-}
-
-// Patterns
-pattern = {
-    "_" |  // Wildcard
-    identifier |  // Variable binding
-    literal |  // Literal pattern
-    "(" ~ pattern ~ ("," ~ pattern)* ~ ")" |  // Tuple pattern
-    identifier ~ "{" ~ (identifier ~ ":" ~ pattern) ~ ("," ~ identifier ~ ":" ~ pattern)* ~ "}" |  // Struct pattern
-    identifier ~ "::" ~ identifier ~ ("(" ~ pattern ~ ")")? |  // Enum pattern
-    identifier ~ "@" ~ pattern  // Binding with subpattern
-}
-
-// Expressions (no left recursion; use Pratt parser in Rust)
-expr = { primary_expr }
-
-primary_expr = {
-    literal
-    | identifier
-    | "(" ~ expr ~ ")"
-    | array_literal
-    | tuple_literal
-    | struct_literal
-    | block_expr
-    | if_expr
-    | match_expr
-}
-
-// Postfixes and infix ops will be handled in Rust using pest_pratt_parser
-
-array_literal = { "[" ~ (expr ~ ("," ~ expr)*)? ~ "]" }
-tuple_literal = { "(" ~ expr ~ ("," ~ expr)* ~ ")" }
-struct_literal = { identifier ~ "{" ~ (identifier ~ ":" ~ expr) ~ ("," ~ identifier ~ ":" ~ expr)* ~ "}" }
-
-block_expr = { "{" ~ stmt* ~ expr? ~ "}" }
-
-if_expr = { "if" ~ expr ~ block_expr ~ ("else" ~ (if_expr | block_expr))? }
-
-match_expr = { "match" ~ expr ~ "{" ~ match_arm+ ~ "}" }
-match_arm = { pattern ~ ("if" ~ expr)? ~ "=>" ~ (block_expr | expr ~ ",") }
+// Expressions (MVP: literal, variable, function call)
+expr = { call_expr | string_literal | identifier }
+call_expr = { identifier ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" }
 
 // Statements
-stmt = {
-    let_stmt |
-    expr_stmt |
-    return_stmt |
-    if_stmt |
-    while_stmt |
-    for_stmt |
-    match_stmt |
-    try_stmt |
-    embedded_rust_stmt
-}
-
-let_stmt = { "let" ~ pattern ~ (":" ~ type_expr)? ~ "=" ~ expr ~ ";" }
+stmt = { expr_stmt }
 expr_stmt = { expr ~ ";" }
-return_stmt = { "return" ~ expr? ~ ";" }
-if_stmt = { if_expr ~ ";" }
-while_stmt = { "while" ~ expr ~ block_expr }
-for_stmt = { "for" ~ pattern ~ "in" ~ expr ~ block_expr }
-match_stmt = { match_expr ~ ";" }
-try_stmt = { "try" ~ block_expr ~ ("catch" ~ block_expr)? }
-embedded_rust_stmt = { "rust" ~ "{" ~ (!"}" ~ ANY)* ~ "}" }
 
-// Function Definition
-function_def = {
-    ("@rust")? ~ "fn" ~ identifier ~ "(" ~ (param ~ ("," ~ param)*)? ~ ")" ~ 
-    ("=>" ~ type_expr)? ~ 
-    block_expr
-}
+// Block
+block_expr = { "{" ~ stmt* ~ "}" }
 
-param = { identifier ~ (":" ~ type_expr)? }
-
-// Data Definition
-data_def = {
-    "data" ~ identifier ~ ("<" ~ identifier ~ ("," ~ identifier)* ~ ">")? ~ 
-    ("=" ~ data_body)
-}
-
-data_body = {
-    struct_body |
-    enum_body |
-    tagged_union_body
-}
-
-struct_body = { "{" ~ (field_def ~ ("," ~ field_def)*)? ~ "}" }
-field_def = { identifier ~ ":" ~ type_expr }
-
-enum_body = { 
-    identifier ~ ("(" ~ (field_def ~ ("," ~ field_def)*)? ~ ")")? ~ 
-    ("|" ~ identifier ~ ("(" ~ (field_def ~ ("," ~ field_def)*)? ~ ")")?)* 
-}
-
-tagged_union_body = {
-    identifier ~ ":" ~ type_expr ~ 
-    ("|" ~ identifier ~ ":" ~ type_expr)*
-}
-
-// Import and Export
-import_stmt = { "import" ~ ("rust")? ~ import_path ~ ";" }
-import_path = { string_literal | (identifier ~ ("::" ~ identifier)*) }
-
-export_stmt = { "export" ~ identifier ~ ";" }
-
-// Embedded Rust
-embedded_rust_block = { "rust" ~ "{" ~ (!"}" ~ ANY)* ~ "}" }
+// Function Definition (MVP)
+fn_keyword = { "fn" }
+function_name = { identifier }
+param = { identifier }
+function_params = { "(" ~ (param ~ ("," ~ param)*)? ~ ")" }
+function_def = { fn_keyword ~ function_name ~ function_params ~ block_expr }
 
 // Module Structure
-module_item = {
-    import_stmt |
-    export_stmt |
-    data_def |
-    function_def |
-    embedded_rust_block
-}
-
-module = { SOI ~ module_item* ~ EOI }
+module = { SOI ~ function_def* ~ EOI }
 
 // Root rule
 root = { module }

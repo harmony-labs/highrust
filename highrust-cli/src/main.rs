@@ -93,8 +93,8 @@ fn main() {
                             fn format_transpiler_error(e: &TranspilerError) -> String {
                                 match e {
                                     TranspilerError::ParseError(msg) => format!("Parse error: {}", msg),
-                                    TranspilerError::LoweringError(le) => format!("Lowering error: {}", le),
-                                    TranspilerError::CodegenError(ce) => format!("Codegen error: {}", ce),
+                                    TranspilerError::LoweringError(le) => format!("Lowering error: {:?}", le),
+                                    TranspilerError::CodegenError(ce) => format!("Codegen error: {:?}", ce),
                                     TranspilerError::IoError(ioe) => format!("I/O error: {}", ioe),
                                 }
                             }

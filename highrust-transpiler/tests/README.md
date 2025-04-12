@@ -73,3 +73,39 @@ The test suite aims to achieve comprehensive coverage of the transpiler:
 4. **Code Generation**: All generated Rust patterns
 
 As the transpiler implementation progresses, the test suite will be expanded to cover more complex language features and edge cases.
+
+---
+
+## 4. Runtime Tests (`run_runtime_tests.sh`)
+
+Runtime tests validate that the transpiler not only generates correct Rust code, but that the code can be compiled and executed successfully.
+
+### Purpose
+
+These tests ensure that sample HighRust programs can be transpiled, compiled, and run without errors, providing end-to-end validation of the transpiler's output.
+
+### How to Run
+
+From the `highrust-transpiler/tests/` directory, execute:
+
+```bash
+./run_runtime_tests.sh
+```
+
+This script will:
+1. Iterate over each `.hrs` file in `fixtures/basic/`
+2. Transpile it to Rust using the CLI (`highrust`)
+3. Optionally compare the generated Rust code to the expected output
+4. Compile the generated Rust code with `rustc`
+5. Run the resulting binary and check for successful execution
+
+### Interpreting Results
+
+- If all tests pass, the script will print "All runtime tests passed."
+- If any test fails (compilation or runtime error), the script will print "Some runtime tests failed." and exit with a nonzero status.
+- Warnings are shown if the generated Rust code differs from the expected output.
+
+### Notes
+
+- The script uses a temporary directory for generated files and binaries.
+- The runtime tests provide an additional layer of confidence beyond golden file and integration tests, ensuring that the transpiler's output is valid Rust code that runs as expected.

@@ -168,6 +168,7 @@ pub enum Stmt {
 pub enum Expr {
     Literal(Literal, Span),
     Variable(String, Span),
+    Wildcard(Span),
     Call {
         func: Box<Expr>,
         args: Vec<Expr>,
@@ -189,6 +190,11 @@ pub enum Expr {
         body: Box<Expr>,
         span: Span,
     },
+    Match {
+        expr: Box<Expr>,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
     Try(Box<Expr>, Span),
     // Add more as needed (e.g., binary ops, unary ops)
 }
@@ -199,6 +205,7 @@ pub enum Pattern {
     Wildcard(Span),
     Variable(String, Span),
     Tuple(Vec<Pattern>, Span),
+    TuplePair(Box<Pattern>, Box<Pattern>, Span),
     Struct {
         name: String,
         fields: Vec<(String, Pattern)>,
@@ -217,8 +224,8 @@ pub enum Pattern {
 #[derive(Debug, Clone)]
 pub struct MatchArm {
     pub pattern: Pattern,
-    pub guard: Option<Expr>,
-    pub body: Block,
+    pub guard: Option<Box<Expr>>,
+    pub expr: Box<Expr>,
     pub span: Span,
 }
 
