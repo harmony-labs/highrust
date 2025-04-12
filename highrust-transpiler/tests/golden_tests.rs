@@ -7,9 +7,9 @@ mod test_utils;
 
 use highrust_transpiler::{
     ast::{Module, Span},
-    codegen::{CodegenContext, LoweredIr},
+    codegen::CodegenContext,
     parser::parse,
-    lowering::lower_module,
+    lowering::{lower_module, LoweredModule},
 };
 use test_utils::{get_fixture_files, get_expected_path, read_file_content};
 
@@ -23,22 +23,22 @@ fn transpile_highrust_to_rust(source: &str) -> String {
     // 3. Generate Rust code from the IR
     
     match parse(source) {
-        Ok(_) => {
-            // For now, we'll use a dummy AST and IR since parsing is just a stub
-            let dummy_module = Module {
-                items: vec![],
-                span: Span { start: 0, end: 0 },
-            };
-            
-            let _lowered = lower_module(&dummy_module);
-            
-            // Placeholder for lowered IR
-            let ir = LoweredIr {};
-            let ctx = CodegenContext::new();
-            
-            // Generate Rust code using the lowered IR
-            // Currently just returns an empty string
-            highrust_transpiler::codegen::generate_rust_code(&ir, &ctx)
+        Ok(ast) => {
+            // Lower the AST to IR
+            match lower_module(&ast) {
+                Ok(lowered) => {
+                    // Generate Rust code using the lowered IR
+                    let mut ctx = CodegenContext::new();
+                    match highrust_transpiler::codegen::generate_rust_code(&lowered, &mut ctx) {
+                        Ok(code) => code,
+                        Err(e) => format!("// Failed to generate Rust code: {:?}", e)
+                    }
+                },
+                Err(e) => {
+                    // If lowering failed, return a comment with the error
+                    format!("// Failed to lower AST to IR: {:?}", e)
+                }
+            }
         },
         Err(e) => {
             // If parsing failed, return a comment with the error

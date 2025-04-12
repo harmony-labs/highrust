@@ -6,8 +6,8 @@
 use highrust_transpiler::{
     ast::{Module, Span, FunctionDef, Block, Stmt, Expr, Literal},
     parser::parse,
-    lowering::{lower_module, lower_function, lower_stmt, lower_expr},
-    codegen::{CodegenContext, LoweredIr},
+    lowering::{lower_module, lower_function, lower_stmt, lower_expr, LoweredModule},
+    codegen::CodegenContext,
 };
 
 #[test]
@@ -86,14 +86,19 @@ fn test_lowering_entry_points() {
 #[test]
 fn test_codegen_context() {
     // Test that we can create a codegen context
-    let ctx = CodegenContext::new();
+    let mut ctx = CodegenContext::new();
     
-    // Create a stubbed IR and generate code
-    let ir = LoweredIr {};
-    let code = highrust_transpiler::codegen::generate_rust_code(&ir, &ctx);
+    // Create a minimal lowered module
+    let module = LoweredModule { items: vec![] };
     
-    // Currently this returns an empty string
-    assert_eq!(code, "");
+    // Generate code
+    let result = highrust_transpiler::codegen::generate_rust_code(&module, &mut ctx);
+    
+    // Check that code generation succeeds
+    assert!(result.is_ok());
+    
+    // Check that the result is an empty string (since our module is empty)
+    assert_eq!(result.unwrap(), "");
 }
 
 #[test]
