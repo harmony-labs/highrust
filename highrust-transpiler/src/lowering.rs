@@ -232,7 +232,23 @@ pub fn lower_stmt(stmt: &Stmt, analysis_result: &OwnershipAnalysisResult) -> Res
 pub fn lower_expr(expr: &Expr, analysis_result: &OwnershipAnalysisResult) -> Result<LoweredExpr, LoweringError> {
     match expr {
         Expr::Literal(lit, _) => Ok(LoweredExpr::Literal(lower_literal(lit))),
-        Expr::Variable(name, _) => Ok(LoweredExpr::Variable(name.clone())),
+        Expr::Variable(name, _) => {
+            // Check if this variable should be borrowed
+            if analysis_result.immut_borrowed_vars.contains(name) {
+                // This should be an immutable borrow
+                // For now, we don't change the lowered expr, but in a real implementation
+                // we would add the borrow operator
+                Ok(LoweredExpr::Variable(name.clone()))
+            } else if analysis_result.mut_borrowed_vars.contains(name) {
+                // This should be a mutable borrow
+                // For now, we don't change the lowered expr, but in a real implementation
+                // we would add the mutable borrow operator
+                Ok(LoweredExpr::Variable(name.clone()))
+            } else {
+                // Regular variable usage
+                Ok(LoweredExpr::Variable(name.clone()))
+            }
+        },
         Expr::Call { func, args, .. } => Ok(LoweredExpr::Call {
             func: Box::new(lower_expr(func, analysis_result)?),
             args: args.iter().map(|arg| lower_expr(arg, analysis_result)).collect::<Result<_,_>>()?,

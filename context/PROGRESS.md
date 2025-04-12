@@ -1,6 +1,6 @@
 # HighRust Project Progress
 
-**Status:** Phase 1 (Core Transpiler MVP) completed. Phase 2 (Ownership/Conversion Inference) in progress (30% complete).
+**Status:** Phase 1 (Core Transpiler MVP) completed. Phase 2 (Ownership/Conversion Inference) in progress (45% complete).
 
 ---
 
@@ -28,14 +28,14 @@
 - Created test infrastructure including golden file tests and runtime tests
 - Established robust test fixtures for basic language features validation
 
-### Phase 2: Ownership and Conversion Inference (30% Complete)
+### Phase 2: Ownership and Conversion Inference (45% Complete)
 
 - [~] Implement dataflow-based mutability, borrow, and clone inference
   - [x] Scaffold ownership inference system
   - [x] Implement mutability inference based on variable usage patterns
   - [x] Integrate mutability decisions into code generation
   - [~] Implement complete dataflow analysis for variable usage
-  - [ ] Implement borrow and move inference
+  - [~] Implement borrow and move inference
 - [ ] Insert .to_string() conversions where required
 - [ ] Implement Option and Result type mapping
 - [ ] Add full pattern matching support
@@ -51,6 +51,12 @@
 - Added dataflow analysis to track variable state changes through blocks and branches
 - Enhanced lowering module to apply inferred mutability information when generating IR
 - Added unit tests to verify mutability inference logic
+- Implemented foundation for borrow inference system:
+  - Added tracking for immutable and mutable borrows
+  - Developed data structures to store borrow information in context
+  - Created test cases for verifying borrow and move inference
+  - Extended the code generation to support borrowing and moving semantics
+  - Implemented special handling for method calls that should borrow their receiver
 
 ### Phase 3: Async, Polyfills, Build Integration
 

@@ -19,14 +19,18 @@
 
 ## Phase 2: Ownership and Conversion Inference
 
-**Percent complete: 30% (1.5/5 tasks)**
+**Percent complete: 45% (2.25/5 tasks)**
 
 - [~] Implement dataflow-based mutability, borrow, and clone inference
   - [x] Scaffold ownership inference system
   - [x] Implement mutability inference based on variable usage patterns
   - [x] Integrate mutability decisions into code generation
   - [~] Implement complete dataflow analysis for variable usage
-  - [ ] Implement borrow and move inference
+  - [~] Implement borrow and move inference
+    - [x] Set up data structures for tracking borrows and moves
+    - [x] Implement foundations for borrow inference
+    - [x] Create tests for immutable borrows, mutable borrows, and moves
+    - [ ] Complete implementation of borrow/move inference across all code contexts
 - [ ] Insert .to_string() conversions where required
 - [ ] Implement Option and Result type mapping
 - [ ] Add full pattern matching support

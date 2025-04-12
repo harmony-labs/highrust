@@ -3,7 +3,6 @@ pub mod ast;
 pub mod lowering;
 pub mod codegen;
 pub mod ownership;
-
 use std::path::Path;
 
 /// Error type for the transpiler.
@@ -71,18 +70,13 @@ pub fn transpile_source(source: &str) -> Result<String, TranspilerError> {
     
     // Perform ownership inference
     let ownership_inference = ownership::OwnershipInference::new();
-    let _ownership_analysis = ownership_inference.analyze_module(&ast);
+    let ownership_analysis = ownership_inference.analyze_module(&ast);
     
-    // Lower the AST to IR, passing ownership information
-    // Note: The ownership analysis is already integrated in the lower_module function
+    // Lower the AST to IR
     let ir = lowering::lower_module(&ast)?;
     
-    // The ownership analysis results are now used during lowering
-    // inform the codegen phase about required mut, &, &mut, and clone() calls
-    
-    // Generate Rust code
-    let mut ctx = codegen::CodegenContext::new();
-    // In the future, we'll pass ownership_analysis to the context
+    // Generate Rust code with ownership analysis results
+    let mut ctx = codegen::CodegenContext::with_analysis(ownership_analysis);
     let rust_code = codegen::generate_rust_code(&ir, &mut ctx)?;
     
     Ok(rust_code)
@@ -123,7 +117,7 @@ mod tests {
     use super::lowering::*;
     use super::codegen::*;
     use super::ownership::{OwnershipAnalysisResult, OwnershipInference};
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn lowering_entry_points_compile() {
@@ -145,10 +139,14 @@ mod tests {
         // Create a mock ownership analysis result for testing
         let mock_analysis = OwnershipAnalysisResult {
             mutable_vars: HashSet::new(),
-            borrowed_vars: HashSet::new(),
+            immut_borrowed_vars: HashSet::new(),
+            mut_borrowed_vars: HashSet::new(),
             moved_vars: HashSet::new(),
             cloned_vars: HashSet::new(),
             lifetime_params: Vec::new(),
+            borrow_graph: HashMap::new(),
+            lifetime_params: Vec::new(),
+            borrow_graph: HashMap::new(),
         };
 
         // Call lowering functions
@@ -192,11 +190,11 @@ mod tests {
         
         // Perform ownership inference and lower the AST to IR
         let ownership_inference = OwnershipInference::new();
-        let _analysis_result = ownership_inference.analyze_module(&module);
+        let analysis_result = ownership_inference.analyze_module(&module);
         let ir = lower_module(&module).expect("Failed to lower module");
         
         // Generate Rust code
-        let mut ctx = CodegenContext::new();
+        let mut ctx = CodegenContext::with_analysis(analysis_result);
         let rust_code = generate_rust_code(&ir, &mut ctx).expect("Failed to generate code");
         
         // Expected output - note the extra newline at the end that our generator adds
