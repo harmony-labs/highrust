@@ -395,6 +395,11 @@ fn generate_expr(
                 } else if analysis.mut_borrowed_vars.contains(name) {
                     should_borrow_mutably = true;
                 }
+                
+                // Also check if this variable is in a borrow graph
+                if analysis.borrow_graph.contains_key(name) {
+                    should_borrow_immutably = true;
+                }
             }
             
             // Apply borrowing as needed

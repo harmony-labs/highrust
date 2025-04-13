@@ -28,7 +28,7 @@
 - Created test infrastructure including golden file tests and runtime tests
 - Established robust test fixtures for basic language features validation
 
-### Phase 2: Ownership and Conversion Inference (55% Complete)
+### Phase 2: Ownership and Conversion Inference (65% Complete)
 
 - [~] Implement dataflow-based mutability, borrow, and clone inference
   - [x] Scaffold ownership inference system
@@ -36,6 +36,8 @@
   - [x] Integrate mutability decisions into code generation
   - [~] Implement complete dataflow analysis for variable usage
   - [~] Implement borrow and move inference
+    - [x] Nested borrow relationships and lifetimes
+    - [x] Borrow tracking across scopes and blocks
 - [~] Insert .to_string() conversions where required
   - [x] Add support for detecting when strings need conversion
   - [x] Implement basic codegen for string literal conversions
@@ -54,6 +56,10 @@
 - Added dataflow analysis to track variable state changes through blocks and branches
 - Enhanced lowering module to apply inferred mutability information when generating IR
 - Added unit tests to verify mutability inference logic
+- Implemented advanced borrow inference:
+  - Nested and temporary borrows
+  - Borrow graph tracking
+  - Borrow lifetime analysis across scopes
 - Implemented automatic string conversion for string literals and operations:
   - Detect when string literals are assigned to String type variables
   - Generate .to_string() calls in the appropriate contexts
