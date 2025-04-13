@@ -90,7 +90,12 @@ pub enum LoweredStmt {
     },
     Expr(LoweredExpr),
     Return(Option<LoweredExpr>),
-    // TODO: If, While, For, Match, etc.
+    If {
+        cond: LoweredExpr,
+        then_branch: LoweredBlock,
+        else_branch: Option<LoweredBlock>,
+    },
+    // TODO: While, For, Match, etc.
 }
 
 #[derive(Debug)]
@@ -224,7 +229,17 @@ pub fn lower_stmt(stmt: &Stmt, analysis_result: &OwnershipAnalysisResult) -> Res
         Stmt::Return(opt_expr, _) => Ok(LoweredStmt::Return(
             opt_expr.as_ref().map(|e| lower_expr(e, analysis_result)).transpose()?
         )),
-        // TODO: If, While, For, Match, etc.
+        Stmt::If { cond, then_branch, else_branch, .. } => {
+            Ok(LoweredStmt::If {
+                cond: lower_expr(cond, analysis_result)?,
+                then_branch: lower_block(then_branch, analysis_result)?,
+                else_branch: match else_branch {
+                    Some(b) => Some(lower_block(b, analysis_result)?),
+                    None => None,
+                },
+            })
+        }
+        // TODO: While, For, Match, etc.
         _ => Err(LoweringError::UnsupportedFeature("Statement type not yet supported")),
     }
 }

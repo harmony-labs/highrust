@@ -169,33 +169,75 @@ fn generate_function(
     output: &mut String,
 ) -> Result<(), CodegenError> {
     // Function signature
-    write!(output, "{}fn {}(", ctx.indent(), func.name)?;
-    
-    // Parameters
+    write!(output, "{}fn {}", ctx.indent(), func.name)?;
+
+    // Check if any parameter or return type is a reference, and if so, add a lifetime
+    let needs_lifetime = func.params.iter().any(|p| is_ref_type(p.ty.as_ref()))
+        || func.ret_type.as_ref().map_or(false, |t| is_ref_type(Some(t)));
+    if needs_lifetime {
+        write!(output, "<'a>")?;
+    }
+
+    write!(output, "(")?;
     for (i, param) in func.params.iter().enumerate() {
         if i > 0 {
             write!(output, ", ")?;
         }
-        generate_param(param, ctx, output)?;
+        write!(output, "{}", param.name)?;
+        if let Some(ty) = &param.ty {
+            write!(output, ": ")?;
+            if needs_lifetime && is_ref_type(Some(ty)) {
+                generate_type_with_lifetime(ty, ctx, output, Some("'a"))?;
+            } else {
+                generate_type(ty, ctx, output)?;
+            }
+        }
     }
     write!(output, ")")?;
-    
-    // Return type
-    if let Some(ret_type) = &func.ret_type {
+    if let Some(ret_ty) = &func.ret_type {
         write!(output, " -> ")?;
-        generate_type(ret_type, ctx, output)?;
+        if needs_lifetime && is_ref_type(Some(ret_ty)) {
+            generate_type_with_lifetime(ret_ty, ctx, output, Some("'a"))?;
+        } else {
+            generate_type(ret_ty, ctx, output)?;
+        }
     }
-    
-    // Function body
-    write!(output, " {{\n")?;
-    
-    ctx.increase_indent();
+    writeln!(output, " {{")?;
+    ctx.indent_level += 1;
     generate_block(&func.body, ctx, output)?;
-    ctx.decrease_indent();
-    
+    ctx.indent_level -= 1;
     writeln!(output, "{}}}", ctx.indent())?;
-    
     Ok(())
+}
+
+/// Returns true if the type is a reference type.
+fn is_ref_type(ty: Option<&LoweredType>) -> bool {
+    match ty {
+        Some(LoweredType::Named(name, _)) if name == "&" => true,
+        _ => false,
+    }
+}
+
+/// Generates a type with a lifetime if it's a reference.
+fn generate_type_with_lifetime(
+    ty: &LoweredType,
+    ctx: &mut CodegenContext,
+    output: &mut String,
+    lifetime: Option<&str>,
+) -> Result<(), CodegenError> {
+    match ty {
+        LoweredType::Named(name, inner) if name == "&" => {
+            write!(output, "&")?;
+            if let Some(l) = lifetime {
+                write!(output, "{} ", l)?;
+            }
+            if let Some(inner_ty) = inner.get(0) {
+                generate_type_with_lifetime(inner_ty, ctx, output, lifetime)?;
+            }
+            Ok(())
+        }
+        _ => generate_type(ty, ctx, output),
+    }
 }
 
 /// Generates Rust code for a function parameter.
@@ -315,6 +357,23 @@ fn generate_stmt(
     output: &mut String,
 ) -> Result<(), CodegenError> {
     match stmt {
+        &LoweredStmt::If { ref cond, ref then_branch, ref else_branch } => {
+            write!(output, "{}if ", ctx.indent())?;
+            generate_expr(cond, ctx, output)?;
+            writeln!(output, " {{")?;
+            ctx.indent_level += 1;
+            generate_block(then_branch, ctx, output)?;
+            ctx.indent_level -= 1;
+            write!(output, "{}}}", ctx.indent())?;
+            if let Some(else_block) = else_branch {
+                writeln!(output, " else {{")?;
+                ctx.indent_level += 1;
+                generate_block(else_block, ctx, output)?;
+                ctx.indent_level -= 1;
+                write!(output, "{}}}", ctx.indent())?;
+            }
+            writeln!(output)?;
+        }
         LoweredStmt::Let { name, value, ty, mutable } => {
             // Add the 'mut' keyword if the variable is inferred to be mutable
             if *mutable {
@@ -346,6 +405,23 @@ fn generate_stmt(
             }
             
             writeln!(output, ";")?;
+        }
+        LoweredStmt::If { cond, then_branch, else_branch } => {
+            write!(output, "{}if ", ctx.indent())?;
+            generate_expr(cond, ctx, output)?;
+            writeln!(output, " {{")?;
+            ctx.indent_level += 1;
+            generate_block(then_branch, ctx, output)?;
+            ctx.indent_level -= 1;
+            write!(output, "{}}}", ctx.indent())?;
+            if let Some(else_block) = else_branch {
+                writeln!(output, " else {{")?;
+                ctx.indent_level += 1;
+                generate_block(else_block, ctx, output)?;
+                ctx.indent_level -= 1;
+                write!(output, "{}}}", ctx.indent())?;
+            }
+            writeln!(output)?;
         }
     }
     
