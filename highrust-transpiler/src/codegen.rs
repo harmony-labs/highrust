@@ -374,7 +374,7 @@ fn generate_stmt(
             }
             writeln!(output)?;
         }
-        LoweredStmt::Let { name, value, ty, mutable } => {
+        LoweredStmt::Let { name, value, ty, mutable, needs_clone } => {
             // Add the 'mut' keyword if the variable is inferred to be mutable
             if *mutable {
                 write!(output, "{}let mut {}", ctx.indent(), name)?;
@@ -388,6 +388,14 @@ fn generate_stmt(
             }
             
             write!(output, " = ")?;
+            // Use the needs_clone annotation from lowering
+            if *needs_clone {
+                if let LoweredExpr::Variable(val_name) = value {
+                    write!(output, "{}.clone()", val_name)?;
+                    writeln!(output, ";")?;
+                    return Ok(());
+                }
+            }
             generate_expr(value, ctx, output)?;
             writeln!(output, ";")?;
         }

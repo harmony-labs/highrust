@@ -87,6 +87,7 @@ pub enum LoweredStmt {
         mutable: bool,
         value: LoweredExpr,
         ty: Option<LoweredType>,
+        needs_clone: bool,
     },
     Expr(LoweredExpr),
     Return(Option<LoweredExpr>),
@@ -200,11 +201,53 @@ fn lower_param(param: &Param) -> LoweredParam {
     }
 }
 fn lower_block(block: &Block, analysis_result: &OwnershipAnalysisResult) -> Result<LoweredBlock, LoweringError> {
+    use std::collections::HashMap;
     let mut stmts = Vec::new();
+    let mut move_state: HashMap<String, bool> = HashMap::new(); // true = moved
     for stmt in &block.stmts {
+        // For let statements, track move state
+        if let Stmt::Let { pattern, value, .. } = stmt {
+            if let Pattern::Variable(name, _) = pattern {
+                let mut needs_clone = false;
+                if let Expr::Variable(val_name, _) = value {
+                    // If val_name has been moved, needs_clone
+                    if move_state.get(val_name).copied().unwrap_or(false) {
+                        needs_clone = true;
+                    }
+                    // Mark val_name as moved
+                    move_state.insert(val_name.clone(), true);
+                }
+                // Mark this variable as not moved (new binding)
+                move_state.insert(name.clone(), false);
+                let lowered = lower_stmt_with_clone(stmt, analysis_result, needs_clone)?;
+                stmts.push(lowered);
+                continue;
+            }
+        }
         stmts.push(lower_stmt(stmt, analysis_result)?);
     }
     Ok(LoweredBlock { stmts })
+}
+
+// Helper to pass needs_clone to lower_stmt for let statements
+fn lower_stmt_with_clone(stmt: &Stmt, analysis_result: &OwnershipAnalysisResult, needs_clone: bool) -> Result<LoweredStmt, LoweringError> {
+    match stmt {
+        Stmt::Let { pattern, value, ty, .. } => {
+            let name = match pattern {
+                Pattern::Variable(n, _) => n.clone(),
+                _ => return Err(LoweringError::UnsupportedFeature("Destructuring patterns in let")),
+            };
+            let mutable = analysis_result.mutable_vars.contains(&name);
+            Ok(LoweredStmt::Let {
+                name,
+                mutable,
+                value: lower_expr(value, analysis_result)?,
+                ty: ty.as_ref().map(lower_type).transpose()?,
+                needs_clone,
+            })
+        }
+        _ => lower_stmt(stmt, analysis_result),
+    }
 }
 
 pub fn lower_stmt(stmt: &Stmt, analysis_result: &OwnershipAnalysisResult) -> Result<LoweredStmt, LoweringError> {
@@ -218,11 +261,18 @@ pub fn lower_stmt(stmt: &Stmt, analysis_result: &OwnershipAnalysisResult) -> Res
             // Check if this variable needs to be mutable
             let mutable = analysis_result.mutable_vars.contains(&name);
             
+            // Determine if this let statement needs .clone() on the right-hand side
+            let needs_clone = if let Expr::Variable(val_name, _) = value {
+                analysis_result.cloned_vars.contains(val_name)
+            } else {
+                false
+            };
             Ok(LoweredStmt::Let {
                 name,
                 mutable,
                 value: lower_expr(value, analysis_result)?,
                 ty: ty.as_ref().map(lower_type).transpose()?,
+                needs_clone,
             })
         }
         Stmt::Expr(expr) => Ok(LoweredStmt::Expr(lower_expr(expr, analysis_result)?)),
