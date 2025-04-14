@@ -401,10 +401,45 @@ impl OwnershipInference {
             self.analyze_param(param, context);
         }
         
+        // Track which parameters are mutated
+        let mut mutated_params = std::collections::HashSet::new();
+
         // Process function body within a new scope
         let mut body_context = OwnershipContext::with_parent(context.clone());
         for stmt in &func.body.stmts {
+            // If the statement is a mutable borrow or method call on a parameter, mark it as mutated
+            if let Stmt::Expr(Expr::Call { func: call_func, args, .. }) = stmt {
+                if let Expr::FieldAccess { base, field, .. } = &**call_func {
+                    if let Expr::Variable(param_name, _) = &**base {
+                        if self.is_mutating_method_name(field) {
+                            mutated_params.insert(param_name.clone());
+                            // Merge mutated parameter info from body_context to parent context
+                            if let Some(parent_analysis) = context.get_analysis_result() {
+                                if let Some(body_analysis) = body_context.get_analysis_result() {
+                                    for param in &body_analysis.mutable_vars {
+                                        parent_analysis.mutable_vars.insert(param.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Expr::Variable(func_name, _) = &**call_func {
+                    if self.is_mutable_borrowing_function(func_name) && !args.is_empty() {
+                        if let Expr::Variable(param_name, _) = &args[0] {
+                            mutated_params.insert(param_name.clone());
+                        }
+                    }
+                }
+            }
             self.analyze_stmt(stmt, &mut body_context);
+        }
+
+        // Mark mutated parameters as mutable in the analysis result
+        if let Some(analysis) = context.get_analysis_result() {
+            for param in mutated_params {
+                analysis.mutable_vars.insert(param);
+            }
         }
     }
     

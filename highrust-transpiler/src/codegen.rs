@@ -183,6 +183,11 @@ fn generate_function(
         if i > 0 {
             write!(output, ", ")?;
         }
+        // Emit "mut" if this parameter is inferred as mutable
+        let is_mutable = ctx.analysis_result.as_ref().map_or(false, |a| a.mutable_vars.contains(&param.name));
+        if is_mutable {
+            write!(output, "mut ")?;
+        }
         write!(output, "{}", param.name)?;
         if let Some(ty) = &param.ty {
             write!(output, ": ")?;
