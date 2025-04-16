@@ -1,1 +1,1 @@
-// Failed to parse HighRust code: PestError(Error { variant: ParsingError { positives: [expr_stmt], negatives: [] }, location: Pos(76), line_col: Pos((4, 5)), path: None, line: "    match value {", continued_line: None, parse_attempts: None })
+// Failed to parse HighRust code: PestError(Error { variant: ParsingError { positives: [match_arm], negatives: [] }, location: Pos(98), line_col: Pos((5, 9)), path: None, line: "        0 => println(\"Zero\"),", continued_line: None, parse_attempts: None })

@@ -8,7 +8,7 @@ use pest_derive::Parser;
 use pest::iterators::Pair;
 use std::fmt;
 use crate::ast::{
-    Block, Expr, FunctionDef, Literal, Module, ModuleItem, Param, Span, Stmt,
+    Block, Expr, FunctionDef, Literal, MatchArm, Module, ModuleItem, Param, Pattern, Span, Stmt,
 };
 
 /// Errors that can occur during parsing.
@@ -193,6 +193,10 @@ fn build_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
             println!("Found identifier rule: {}", pair.as_str());
             Ok(Expr::Variable(pair.as_str().to_string(), span))
         },
+        Rule::match_expr => {
+            println!("Found match_expr rule");
+            build_match_expr(pair)
+        },
         _ => {
             println!("Unhandled expr rule: {:?}", pair.as_rule());
             Err(ParseError::UnexpectedRule(pair.as_rule()))
@@ -215,6 +219,76 @@ fn build_call_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         args,
         span,
     })
+}
+
+/// Build a match expression from a Pest pair.
+fn build_match_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
+    let span = get_span(&pair);
+    let mut inner = pair.into_inner();
+    // match_expr = { "match" ~ expr ~ "{" ~ match_arm* ~ "}" }
+    let _match_kw = inner.next(); // skip 'match' keyword
+    let matched_expr = build_expr(inner.next().ok_or(ParseError::Unknown)?)?;
+    let mut arms = Vec::new();
+    for arm_pair in inner {
+        if arm_pair.as_rule() == Rule::match_arm {
+            arms.push(build_match_arm(arm_pair)?);
+        }
+    }
+    Ok(Expr::Match {
+        expr: Box::new(matched_expr),
+        arms,
+        span,
+    })
+}
+
+/// Build a match arm from a Pest pair.
+fn build_match_arm(pair: Pair<Rule>) -> Result<MatchArm, ParseError> {
+    let span = get_span(&pair);
+    let mut inner = pair.into_inner();
+    // match_arm = { pattern ~ guard? ~ "=>" ~ expr ~ ","? }
+    let pattern = build_pattern(inner.next().ok_or(ParseError::Unknown)?)?;
+    let mut guard = None;
+    let mut expr = None;
+    for item in inner {
+        match item.as_rule() {
+            Rule::guard => {
+                let guard_inner = item.into_inner().next().ok_or(ParseError::Unknown)?;
+                guard = Some(Box::new(build_expr(guard_inner)?));
+            },
+            Rule::expr => {
+                expr = Some(Box::new(build_expr(item)?));
+            },
+            _ => {}
+        }
+    }
+    Ok(MatchArm {
+        pattern,
+        guard,
+        expr: expr.ok_or(ParseError::Unknown)?,
+        span,
+    })
+}
+
+/// Build a pattern from a Pest pair.
+fn build_pattern(pair: Pair<Rule>) -> Result<Pattern, ParseError> {
+    let span = get_span(&pair);
+    match pair.as_rule() {
+        Rule::wildcard_pattern => Ok(Pattern::Wildcard(span)),
+        Rule::identifier => Ok(Pattern::Variable(pair.as_str().to_string(), span)),
+        Rule::string_literal => {
+            let s = pair.as_str();
+            let content = s[1..s.len()-1].to_string();
+            Ok(Pattern::Literal(Literal::String(content), span))
+        },
+        Rule::tuple_pattern => {
+            let mut elements = Vec::new();
+            for sub in pair.into_inner() {
+                elements.push(build_pattern(sub)?);
+            }
+            Ok(Pattern::Tuple(elements, span))
+        },
+        _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
+    }
 }
 
 /// Utility: get span from pest Pair

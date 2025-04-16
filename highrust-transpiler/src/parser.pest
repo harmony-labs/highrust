@@ -7,9 +7,17 @@ COMMENT = _{ "//" ~ (!"\n" ~ ANY)* ~ ("\n" | EOI) | "/*" ~ (!"*/" ~ ANY)* ~ "*/"
 identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-// Expressions (MVP: literal, variable, function call)
-expr = { call_expr | string_literal | identifier }
+// Expressions (MVP: literal, variable, function call, match)
+expr = { match_expr | call_expr | string_literal | identifier }
 call_expr = { identifier ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" }
+
+// Match expression
+match_expr = { "match" ~ expr ~ "{" ~ match_arm* ~ "}" }
+match_arm = { pattern ~ guard? ~ "=>" ~ expr ~ ","? }
+guard = { "if" ~ expr }
+pattern = _{ wildcard_pattern | tuple_pattern | string_literal | identifier }
+wildcard_pattern = { "_" }
+tuple_pattern = { "(" ~ pattern ~ ("," ~ pattern)* ~ ")" }
 
 // Statements
 stmt = { expr_stmt }
