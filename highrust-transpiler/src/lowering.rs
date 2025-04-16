@@ -6,7 +6,7 @@
 //! the AST for code generation.
 
 use crate::ast::{
-    Module, ModuleItem, FunctionDef, DataDef, DataKind, Field, EnumVariant, Stmt, Expr, Literal, Type, Block, Param, Pattern,
+    Module, ModuleItem, FunctionDef, DataDef, DataKind, Field, EnumVariant, Stmt, Expr, Literal, Type, Block, Param, Pattern, MatchArm,
 };
 use crate::ownership::{OwnershipInference, OwnershipAnalysisResult};
 use std::collections::HashMap;
@@ -111,7 +111,27 @@ pub enum LoweredExpr {
     },
     Block(LoweredBlock),
     Propagate(Box<LoweredExpr>), // Represents `?` propagation
+    Match {
+        expr: Box<LoweredExpr>,
+        arms: Vec<LoweredMatchArm>,
+    },
     // TODO: FieldAccess, Await, Comprehension, etc.
+}
+
+#[derive(Debug, Clone)]
+pub struct LoweredMatchArm {
+    pub pattern: LoweredPattern,
+    pub guard: Option<Box<LoweredExpr>>,
+    pub expr: Box<LoweredExpr>,
+}
+
+#[derive(Debug, Clone)]
+pub enum LoweredPattern {
+    Wildcard,
+    Variable(String),
+    Tuple(Vec<LoweredPattern>),
+    Literal(LoweredLiteral),
+    // Extend as needed (struct, enum, etc.)
 }
 
 #[derive(Debug, Clone)]
@@ -349,8 +369,33 @@ pub fn lower_expr(expr: &Expr, analysis_result: &OwnershipAnalysisResult) -> Res
             // Represents `?` propagation
             Ok(LoweredExpr::Propagate(Box::new(lower_expr(inner, analysis_result)?)))
         },
+        Expr::Match { expr, arms, .. } => Ok(LoweredExpr::Match {
+            expr: Box::new(lower_expr(expr, analysis_result)?),
+            arms: arms.iter().map(|arm| lower_match_arm(arm, analysis_result)).collect::<Result<_,_>>()?,
+        }),
         // Other expression types
         _ => Err(LoweringError::UnsupportedFeature("Expression type not yet supported")),
+    }
+}
+
+fn lower_match_arm(arm: &MatchArm, analysis_result: &OwnershipAnalysisResult) -> Result<LoweredMatchArm, LoweringError> {
+    Ok(LoweredMatchArm {
+        pattern: lower_pattern(&arm.pattern)?,
+        guard: match &arm.guard {
+            Some(g) => Some(Box::new(lower_expr(g, analysis_result)?)),
+            None => None,
+        },
+        expr: Box::new(lower_expr(&arm.expr, analysis_result)?),
+    })
+}
+
+fn lower_pattern(pattern: &Pattern) -> Result<LoweredPattern, LoweringError> {
+    match pattern {
+        Pattern::Wildcard(_) => Ok(LoweredPattern::Wildcard),
+        Pattern::Variable(name, _) => Ok(LoweredPattern::Variable(name.clone())),
+        Pattern::Tuple(elems, _) => Ok(LoweredPattern::Tuple(elems.iter().map(lower_pattern).collect::<Result<_,_>>()?)),
+        Pattern::Literal(lit, _) => Ok(LoweredPattern::Literal(lower_literal(lit))),
+        _ => Err(LoweringError::UnsupportedFeature("Pattern type not yet supported in lowering")),
     }
 }
 

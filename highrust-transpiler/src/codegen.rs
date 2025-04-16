@@ -7,7 +7,7 @@
 use crate::lowering::{
     LoweredBlock, LoweredData, LoweredDataKind, LoweredEnumVariant, LoweredExpr,
     LoweredFunction, LoweredItem, LoweredLiteral, LoweredModule, LoweredParam, LoweredStmt,
-    LoweredType,
+    LoweredType, LoweredPattern,
 };
 use std::fmt::Write;
 use crate::ownership::OwnershipAnalysisResult;
@@ -623,6 +623,26 @@ fn generate_expr(
             write!(output, "?")?;
             Ok(())
         }
+        LoweredExpr::Match { expr, arms } => {
+            write!(output, "match ")?;
+            generate_expr(expr, ctx, output)?;
+            writeln!(output, " {{")?;
+            ctx.indent_level += 1;
+            for arm in arms {
+                write!(output, "{}", ctx.indent())?;
+                generate_pattern(&arm.pattern, ctx, output)?;
+                if let Some(guard) = &arm.guard {
+                    write!(output, " if ")?;
+                    generate_expr(guard, ctx, output)?;
+                }
+                write!(output, " => ")?;
+                generate_expr(&arm.expr, ctx, output)?;
+                writeln!(output, ",")?;
+            }
+            ctx.indent_level -= 1;
+            write!(output, "{}}}", ctx.indent())?;
+            Ok(())
+        }
     }
 }
 
@@ -717,5 +737,24 @@ fn generate_type(
             generate_type_with_lifetime(inner, ctx, output, lt.as_deref().or(lifetime))?;
             Ok(())
         }
+    }
+}
+
+/// Generates Rust code for a pattern.
+fn generate_pattern(pattern: &LoweredPattern, _ctx: &mut CodegenContext, output: &mut String) -> Result<(), CodegenError> {
+    match pattern {
+        LoweredPattern::Wildcard => write!(output, "_").map_err(CodegenError::FormatError),
+        LoweredPattern::Variable(name) => write!(output, "{}", name).map_err(CodegenError::FormatError),
+        LoweredPattern::Tuple(elems) => {
+            write!(output, "(").map_err(CodegenError::FormatError)?;
+            for (i, elem) in elems.iter().enumerate() {
+                if i > 0 {
+                    write!(output, ", ").map_err(CodegenError::FormatError)?;
+                }
+                generate_pattern(elem, _ctx, output)?;
+            }
+            write!(output, ")").map_err(CodegenError::FormatError)
+        },
+        LoweredPattern::Literal(lit) => generate_literal(lit, _ctx, output, false),
     }
 }
