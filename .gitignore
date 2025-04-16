@@ -8,4 +8,4 @@ Cargo.lock
 history.txt # created by surreal command with `make surreal-sql`
 
 # vendored child projects
-vendor/
+vendor/.vscode

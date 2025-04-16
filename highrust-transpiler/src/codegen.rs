@@ -5,7 +5,7 @@
 //! lowered IR into valid Rust code.
 
 use crate::lowering::{
-    LoweredBlock, LoweredData, LoweredDataKind, LoweredEnumVariant, LoweredExpr, LoweredField,
+    LoweredBlock, LoweredData, LoweredDataKind, LoweredEnumVariant, LoweredExpr,
     LoweredFunction, LoweredItem, LoweredLiteral, LoweredModule, LoweredParam, LoweredStmt,
     LoweredType,
 };
@@ -170,42 +170,53 @@ fn generate_function(
 ) -> Result<(), CodegenError> {
     // Function signature
     write!(output, "{}fn {}", ctx.indent(), func.name)?;
-
-    // Check if any parameter or return type is a reference, and if so, add a lifetime
-    let needs_lifetime = func.params.iter().any(|p| is_ref_type(p.ty.as_ref()))
-        || func.ret_type.as_ref().map_or(false, |t| is_ref_type(Some(t)));
-    if needs_lifetime {
-        write!(output, "<'a>")?;
+    // Collect lifetimes
+    let mut lifetimes = Vec::new();
+    for param in &func.params {
+        if let Some(ref ty) = param.ty {
+            collect_lifetimes(ty, &mut lifetimes);
+        }
     }
-
+    if let Some(ref ret_ty) = func.ret_type {
+        collect_lifetimes(ret_ty, &mut lifetimes);
+    }
+    // If the function returns a reference and no lifetime is present, inject a default 'a
+    let mut needs_default_lifetime = false;
+    if let Some(LoweredType::Reference(_, lt)) = func.ret_type.as_ref() {
+        if lt.is_none() && lifetimes.is_empty() {
+            needs_default_lifetime = true;
+            lifetimes.push("a".to_string());
+        }
+    }
+    if !lifetimes.is_empty() {
+        let lifetime_list = lifetimes.iter().map(|lt| format!("'{}", lt)).collect::<Vec<_>>().join(", ");
+        write!(output, "<{}>", lifetime_list)?;
+    }
     write!(output, "(")?;
     for (i, param) in func.params.iter().enumerate() {
         if i > 0 {
             write!(output, ", ")?;
         }
-        // Emit "mut" if this parameter is inferred as mutable
-        let is_mutable = ctx.analysis_result.as_ref().map_or(false, |a| a.mutable_vars.contains(&param.name));
-        if is_mutable {
-            write!(output, "mut ")?;
-        }
-        write!(output, "{}", param.name)?;
-        if let Some(ty) = &param.ty {
-            write!(output, ": ")?;
-            if needs_lifetime && is_ref_type(Some(ty)) {
-                generate_type_with_lifetime(ty, ctx, output, Some("'a"))?;
-            } else {
-                generate_type(ty, ctx, output)?;
-            }
+        // If we injected a default lifetime, pass it to generate_param
+        if needs_default_lifetime {
+            generate_param_with_lifetime(param, ctx, output, Some("a"))?;
+        } else {
+            generate_param(param, ctx, output)?;
         }
     }
     write!(output, ")")?;
+    // Return type
     if let Some(ret_ty) = &func.ret_type {
         write!(output, " -> ")?;
-        if needs_lifetime && is_ref_type(Some(ret_ty)) {
-            generate_type_with_lifetime(ret_ty, ctx, output, Some("'a"))?;
+        if needs_default_lifetime {
+            generate_type_with_lifetime(ret_ty, ctx, output, Some("a"))?;
         } else {
-            generate_type(ret_ty, ctx, output)?;
+            generate_type_with_lifetime(ret_ty, ctx, output, None)?;
         }
+    } else if func.is_option {
+        write!(output, " -> Option<_>")?;
+    } else if func.is_result {
+        write!(output, " -> Result<_, _>")?;
     }
     writeln!(output, " {{")?;
     ctx.indent_level += 1;
@@ -231,17 +242,48 @@ fn generate_type_with_lifetime(
     lifetime: Option<&str>,
 ) -> Result<(), CodegenError> {
     match ty {
-        LoweredType::Named(name, inner) if name == "&" => {
+        LoweredType::Reference(inner, lt) => {
             write!(output, "&")?;
-            if let Some(l) = lifetime {
-                write!(output, "{} ", l)?;
+            if let Some(l) = lt.clone().or(lifetime.map(|s| s.to_string())) {
+                write!(output, "'{} ", l)?;
             }
+            generate_type_with_lifetime(inner, ctx, output, lt.as_deref().or(lifetime))?;
+            Ok(())
+        },
+        LoweredType::Named(name, inner) if name == "&" => {
+            // Fallback for legacy IR
+            write!(output, "&")?;
             if let Some(inner_ty) = inner.get(0) {
                 generate_type_with_lifetime(inner_ty, ctx, output, lifetime)?;
             }
             Ok(())
         }
-        _ => generate_type(ty, ctx, output),
+        _ => generate_type(ty, ctx, output, lifetime),
+    }
+}
+
+/// Helper to collect lifetimes from types
+fn collect_lifetimes(ty: &LoweredType, out: &mut Vec<String>) {
+    match ty {
+        LoweredType::Reference(_, Some(l)) => {
+            if !out.contains(l) {
+                out.push(l.clone());
+            }
+        },
+        LoweredType::Reference(inner, None) => collect_lifetimes(inner, out),
+        LoweredType::Option(inner) => collect_lifetimes(inner, out),
+        LoweredType::Result(ok, err) => {
+            collect_lifetimes(ok, out);
+            collect_lifetimes(err, out);
+        },
+        LoweredType::Tuple(types) => {
+            for t in types { collect_lifetimes(t, out); }
+        },
+        LoweredType::Array(inner) => collect_lifetimes(inner, out),
+        LoweredType::Named(_, inner) => {
+            for t in inner { collect_lifetimes(t, out); }
+        },
+        _ => {}
     }
 }
 
@@ -272,11 +314,33 @@ fn generate_param(
     // Add type annotation if available, otherwise default to i32
     if let Some(ty) = &param.ty {
         write!(output, ": ")?;
-        generate_type(ty, ctx, output)?;
+        generate_type(ty, ctx, output, None)?;
     } else {
         write!(output, ": i32")?;
     }
     
+    Ok(())
+}
+
+/// Helper: like generate_param, but forces a specific lifetime for references
+fn generate_param_with_lifetime(
+    param: &LoweredParam,
+    ctx: &mut CodegenContext,
+    output: &mut String,
+    lifetime: Option<&str>,
+) -> Result<(), CodegenError> {
+    // Check if this parameter should be mutable based on analysis
+    let is_mutable = ctx.mutable_vars.contains(&param.name);
+    if is_mutable {
+        write!(output, "mut ")?;
+    }
+    write!(output, "{}", param.name)?;
+    if let Some(ty) = &param.ty {
+        write!(output, ": ")?;
+        generate_type_with_lifetime(ty, ctx, output, lifetime)?;
+    } else {
+        write!(output, ": i32")?;
+    }
     Ok(())
 }
 
@@ -293,7 +357,7 @@ fn generate_data(
             ctx.increase_indent();
             for field in fields {
                 write!(output, "{}{}: ", ctx.indent(), field.name)?;
-                generate_type(&field.ty, ctx, output)?;
+                generate_type(&field.ty, ctx, output, None)?;
                 writeln!(output, ",")?;
             }
             ctx.decrease_indent();
@@ -331,7 +395,7 @@ fn generate_enum_variant(
             if i > 0 {
                 write!(output, ", ")?;
             }
-            generate_type(&field.ty, ctx, output)?;
+            generate_type(&field.ty, ctx, output, None)?;
         }
         
         write!(output, ")")?;
@@ -362,7 +426,35 @@ fn generate_stmt(
     output: &mut String,
 ) -> Result<(), CodegenError> {
     match stmt {
-        &LoweredStmt::If { ref cond, ref then_branch, ref else_branch } => {
+        LoweredStmt::Let { name, value, ty, mutable, needs_clone } => {
+            if *mutable {
+                write!(output, "{}let mut {}", ctx.indent(), name)?;
+            } else {
+                write!(output, "{}let {}", ctx.indent(), name)?;
+            }
+            if let Some(ref ty) = ty {
+                write!(output, ": ")?;
+                generate_type(ty, ctx, output, None)?;
+            }
+            write!(output, " = ")?;
+            if *needs_clone {
+                if let LoweredExpr::Variable(ref val_name) = value {
+                    write!(output, "{}.clone()", val_name)?;
+                    writeln!(output, ";")?;
+                    return Ok(());
+                }
+            }
+            let force_to_string = match (ty, value) {
+                (Some(LoweredType::Named(ref tname, _)), LoweredExpr::Literal(LoweredLiteral::String(_))) if tname == "String" => true,
+                _ => false
+            };
+            match value {
+                LoweredExpr::Literal(ref lit) => generate_literal(lit, ctx, output, force_to_string)?,
+                _ => generate_expr(&value, ctx, output)?
+            }
+            writeln!(output, ";")?;
+        }
+        LoweredStmt::If { ref cond, ref then_branch, ref else_branch } => {
             write!(output, "{}if ", ctx.indent())?;
             generate_expr(cond, ctx, output)?;
             writeln!(output, " {{")?;
@@ -378,31 +470,6 @@ fn generate_stmt(
                 write!(output, "{}}}", ctx.indent())?;
             }
             writeln!(output)?;
-        }
-        LoweredStmt::Let { name, value, ty, mutable, needs_clone } => {
-            // Add the 'mut' keyword if the variable is inferred to be mutable
-            if *mutable {
-                write!(output, "{}let mut {}", ctx.indent(), name)?;
-            } else {
-                write!(output, "{}let {}", ctx.indent(), name)?;
-            }
-            
-            if let Some(ty) = ty {
-                write!(output, ": ")?;
-                generate_type(ty, ctx, output)?;
-            }
-            
-            write!(output, " = ")?;
-            // Use the needs_clone annotation from lowering
-            if *needs_clone {
-                if let LoweredExpr::Variable(val_name) = value {
-                    write!(output, "{}.clone()", val_name)?;
-                    writeln!(output, ";")?;
-                    return Ok(());
-                }
-            }
-            generate_expr(value, ctx, output)?;
-            writeln!(output, ";")?;
         }
         LoweredStmt::Expr(expr) => {
             write!(output, "{}", ctx.indent())?;
@@ -449,19 +516,9 @@ fn generate_expr(
 ) -> Result<(), CodegenError> {
     match expr {
         LoweredExpr::Literal(lit) => {
-            generate_literal(lit, ctx, output)?;
-            
-            // Check if this literal needs .to_string() conversion
-            if let LoweredLiteral::String(_) = lit {
-                // Check if the literal span is in the set of expressions that need conversion
-                if let Some(analysis) = &ctx.analysis_result {
-                    // This is a simplified version - in real code we would check spans
-                    // For now, we'll add .to_string() to all string literals used in a String context
-                    if !analysis.string_converted_exprs.is_empty() {
-                        write!(output, ".to_string()")?;
-                    }
-                }
-            }
+            // Only force .to_string() in certain contexts (handled by caller)
+            generate_literal(lit, ctx, output, false)?;
+            Ok(())
         }
         LoweredExpr::Variable(name) => {
             // Check if variable should be borrowed based on function and variable name
@@ -506,108 +563,67 @@ fn generate_expr(
                     }
                 }
             }
+            Ok(())
         }
         LoweredExpr::Call { func, args } => {
-            generate_expr(func, ctx, output)?;
-            
-            // Handle special string conversion cases
-            if let LoweredExpr::Variable(name) = &**func {
-                if name == "+" && args.len() == 2 {
-                    // This is a string concatenation operation
-                    write!(output, "(")?;
-                    generate_expr(&args[0], ctx, output)?;
-                    if !output.ends_with(".to_string()") {
-                        write!(output, ".to_string()")?;
+            // Check for binary + (string concatenation)
+            if let LoweredExpr::Variable(fname) = &**func {
+                if fname == "+" && args.len() == 2 {
+                    // If left arg is string literal, emit .to_string()
+                    match &args[0] {
+                        LoweredExpr::Literal(LoweredLiteral::String(_)) => {
+                            if let LoweredExpr::Literal(ref l) = &args[0] {
+                                generate_literal(l, ctx, output, true)?;
+                            }
+                        },
+                        _ => generate_expr(&args[0], ctx, output)?
                     }
                     write!(output, " + ")?;
                     generate_expr(&args[1], ctx, output)?;
-                    if !output.ends_with(".to_string()") {
-                        write!(output, ".to_string()")?;
+                    return Ok(());
+                }
+            }
+            // Special handling for println macro
+            if let LoweredExpr::Variable(name) = &**func {
+                if name == "println" {
+                    write!(output, "println!")?;
+                    write!(output, "(")?;
+                    for (i, arg) in args.iter().enumerate() {
+                        if i > 0 {
+                            write!(output, ", ")?;
+                        }
+                        generate_expr(arg, ctx, output)?;
                     }
                     write!(output, ")")?;
                     return Ok(());
-                } else if name == "println" {
-                    // Convert to println! macro with proper formatting
-                    write!(output, "!")?;
-                    
-                    if args.len() == 1 {
-                        if let LoweredExpr::Literal(LoweredLiteral::String(s)) = &args[0] {
-                            // Check if the string contains interpolation
-                            if s.contains("${") {
-                                // Convert string interpolation to Rust format
-                                let mut formatted = String::new();
-                                let mut parts = Vec::new();
-                                let mut current = String::new();
-                                let mut i = 0;
-                                
-                                while i < s.len() {
-                                    if i + 1 < s.len() && &s[i..i+2] == "${" {
-                                        let start = i + 2;
-                                        let mut end = start;
-                                        
-                                        while end < s.len() && s.chars().nth(end) != Some('}') {
-                                            end += 1;
-                                        }
-                                        
-                                        if end < s.len() {
-                                            formatted.push_str(&current);
-                                            formatted.push_str("{}");
-                                            current.clear();
-                                            
-                                            parts.push(s[start..end].to_string());
-                                            i = end + 1;
-                                        } else {
-                                            current.push_str(&s[i..i+2]);
-                                            i += 2;
-                                        }
-                                    } else {
-                                        current.push(s.chars().nth(i).unwrap());
-                                        i += 1;
-                                    }
-                                }
-                                
-                                formatted.push_str(&current);
-                                
-                                write!(output, "(\"{}\", ", formatted)?;
-                                
-                                for (i, part) in parts.iter().enumerate() {
-                                    if i > 0 {
-                                        write!(output, ", ")?;
-                                    }
-                                    write!(output, "{}", part)?;
-                                }
-                                
-                                write!(output, ")")?;
-                                return Ok(());
-                            }
-                        }
-                    }
                 }
             }
-            
+            // Default case
+            generate_expr(func, ctx, output)?;
             write!(output, "(")?;
-            
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
                     write!(output, ", ")?;
                 }
                 generate_expr(arg, ctx, output)?;
             }
-            
             write!(output, ")")?;
+            Ok(())
         }
         LoweredExpr::Block(block) => {
-            writeln!(output, "{{")?;
-            
-            ctx.increase_indent();
-            generate_block(block, ctx, output)?;
-            ctx.decrease_indent();
-            
-            write!(output, "{}}}", ctx.indent())?;
+            write!(output, "{{ ")?;
+            for stmt in &block.stmts {
+                generate_stmt(stmt, ctx, output)?;
+            }
+            write!(output, "}}")?;
+            Ok(())
+        }
+        LoweredExpr::Propagate(inner) => {
+            generate_expr(inner, ctx, output)?;
+            write!(output, "?")?;
+            Ok(())
         }
     }
-    
-    Ok(())
 }
 
 /// Generates Rust code for a literal value.
@@ -615,6 +631,7 @@ fn generate_literal(
     lit: &LoweredLiteral,
     _ctx: &mut CodegenContext,
     output: &mut String,
+    force_to_string: bool,
 ) -> Result<(), CodegenError> {
     match lit {
         LoweredLiteral::Int(i) => {
@@ -628,56 +645,77 @@ fn generate_literal(
         }
         LoweredLiteral::String(s) => {
             write!(output, "\"{}\"", s.replace("\"", "\\\""))?;
+            if force_to_string {
+                write!(output, ".to_string()")?;
+            }
         }
         LoweredLiteral::Null => {
             write!(output, "None")?;
         }
     }
-    
     Ok(())
 }
 
 /// Generates Rust code for a type.
 fn generate_type(
     ty: &LoweredType,
-    _ctx: &mut CodegenContext,
+    ctx: &mut CodegenContext,
     output: &mut String,
+    lifetime: Option<&str>,
 ) -> Result<(), CodegenError> {
     match ty {
-        LoweredType::Named(name, params) => {
+        LoweredType::Named(name, inner) => {
             write!(output, "{}", name)?;
-            
-            if !params.is_empty() {
+            if !inner.is_empty() {
                 write!(output, "<")?;
-                
-                for (i, param) in params.iter().enumerate() {
+                for (i, t) in inner.iter().enumerate() {
                     if i > 0 {
                         write!(output, ", ")?;
                     }
-                    generate_type(param, _ctx, output)?;
+                    generate_type(t, ctx, output, lifetime)?;
                 }
-                
                 write!(output, ">")?;
             }
+            Ok(())
+        }
+        LoweredType::Option(inner) => {
+            write!(output, "Option<")?;
+            generate_type(inner, ctx, output, lifetime)?;
+            write!(output, ">")?;
+            Ok(())
+        }
+        LoweredType::Result(ok, err) => {
+            write!(output, "Result<")?;
+            generate_type(ok, ctx, output, lifetime)?;
+            write!(output, ", ")?;
+            generate_type(err, ctx, output, lifetime)?;
+            write!(output, ">")?;
+            Ok(())
         }
         LoweredType::Tuple(types) => {
             write!(output, "(")?;
-            
-            for (i, ty) in types.iter().enumerate() {
+            for (i, t) in types.iter().enumerate() {
                 if i > 0 {
                     write!(output, ", ")?;
                 }
-                generate_type(ty, _ctx, output)?;
+                generate_type(t, ctx, output, lifetime)?;
             }
-            
             write!(output, ")")?;
+            Ok(())
         }
         LoweredType::Array(inner) => {
-            write!(output, "Vec<")?;
-            generate_type(inner, _ctx, output)?;
-            write!(output, ">")?;
+            write!(output, "[")?;
+            generate_type(inner, ctx, output, lifetime)?;
+            write!(output, "]")?;
+            Ok(())
+        }
+        LoweredType::Reference(inner, lt) => {
+            write!(output, "&")?;
+            if let Some(l) = lt.clone().or(lifetime.map(|s| s.to_string())) {
+                write!(output, "'{} ", l)?;
+            }
+            generate_type_with_lifetime(inner, ctx, output, lt.as_deref().or(lifetime))?;
+            Ok(())
         }
     }
-    
-    Ok(())
 }

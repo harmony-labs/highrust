@@ -86,7 +86,6 @@ fn test_golden_files() {
 /// Helper to generate expected outputs for fixture files
 /// This is not a test but a utility to create initial expected output files
 #[test]
-#[ignore]
 fn generate_expected_outputs() {
     let fixtures_dir = "tests/fixtures/basic";
     let expected_dir = "tests/expected/basic";

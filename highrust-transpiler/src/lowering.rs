@@ -9,7 +9,7 @@ use crate::ast::{
     Module, ModuleItem, FunctionDef, DataDef, DataKind, Field, EnumVariant, Stmt, Expr, Literal, Type, Block, Param, Pattern,
 };
 use crate::ownership::{OwnershipInference, OwnershipAnalysisResult};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Error type for lowering failures.
 #[derive(Debug)]
@@ -67,6 +67,8 @@ pub struct LoweredFunction {
     pub ret_type: Option<LoweredType>,
     pub body: LoweredBlock,
     pub is_async: bool,
+    pub is_result: bool, // indicates if function returns Result
+    pub is_option: bool, // indicates if function returns Option
 }
 
 #[derive(Debug)]
@@ -75,12 +77,12 @@ pub struct LoweredParam {
     pub ty: Option<LoweredType>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoweredBlock {
     pub stmts: Vec<LoweredStmt>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LoweredStmt {
     Let {
         name: String,
@@ -99,7 +101,7 @@ pub enum LoweredStmt {
     // TODO: While, For, Match, etc.
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LoweredExpr {
     Literal(LoweredLiteral),
     Variable(String),
@@ -108,10 +110,11 @@ pub enum LoweredExpr {
         args: Vec<LoweredExpr>,
     },
     Block(LoweredBlock),
+    Propagate(Box<LoweredExpr>), // Represents `?` propagation
     // TODO: FieldAccess, Await, Comprehension, etc.
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LoweredLiteral {
     Int(i64),
     Float(f64),
@@ -120,11 +123,14 @@ pub enum LoweredLiteral {
     Null,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LoweredType {
     Named(String, Vec<LoweredType>),
+    Option(Box<LoweredType>),
+    Result(Box<LoweredType>, Box<LoweredType>),
     Tuple(Vec<LoweredType>),
     Array(Box<LoweredType>),
+    Reference(Box<LoweredType>, Option<String>), // New: reference type with optional lifetime
     // TODO: Function types, generics, etc.
 }
 
@@ -192,6 +198,8 @@ pub fn lower_function(
         ret_type: func.ret_type.as_ref().map(lower_type).transpose()?,
         body: lower_block(&func.body, analysis_result)?,
         is_async: func.is_async,
+        is_result: func.ret_type.as_ref().map_or(false, |t| is_result_type(t)),
+        is_option: func.ret_type.as_ref().map_or(false, |t| is_option_type(t)),
     })
 }
 fn lower_param(param: &Param) -> LoweredParam {
@@ -337,6 +345,10 @@ pub fn lower_expr(expr: &Expr, analysis_result: &OwnershipAnalysisResult) -> Res
             // Just lower the expression for now
             lower_expr(expr, analysis_result)
         },
+        Expr::Try(inner, _) => {
+            // Represents `?` propagation
+            Ok(LoweredExpr::Propagate(Box::new(lower_expr(inner, analysis_result)?)))
+        },
         // Other expression types
         _ => Err(LoweringError::UnsupportedFeature("Expression type not yet supported")),
     }
@@ -354,13 +366,31 @@ fn lower_literal(lit: &Literal) -> LoweredLiteral {
 
 fn lower_type(ty: &Type) -> Result<LoweredType, LoweringError> {
     match ty {
-        Type::Named(name, params) => Ok(LoweredType::Named(
-            name.clone(),
-            params.iter().map(lower_type).collect::<Result<_,_>>()?,
-        )),
+        Type::Named(name, params) => {
+            if name == "&" && params.len() == 1 {
+                // Lower reference type (no lifetime info yet)
+                return Ok(LoweredType::Reference(Box::new(lower_type(&params[0])?), None));
+            }
+            Ok(LoweredType::Named(name.clone(), params.iter().map(lower_type).collect::<Result<_,_>>()?))
+        },
+        Type::Option(inner) => Ok(LoweredType::Option(Box::new(lower_type(inner)?))),
+        Type::Result(ok, err) => Ok(LoweredType::Result(Box::new(lower_type(ok)?), Box::new(lower_type(err)?))),
         Type::Tuple(types) => Ok(LoweredType::Tuple(types.iter().map(lower_type).collect::<Result<_,_>>()?)),
         Type::Array(inner) => Ok(LoweredType::Array(Box::new(lower_type(inner)?))),
-        // TODO: Function types, generics, etc.
         _ => Err(LoweringError::UnsupportedFeature("Type not yet supported")),
+    }
+}
+
+fn is_result_type(ty: &Type) -> bool {
+    match ty {
+        Type::Result(_, _) => true,
+        _ => false,
+    }
+}
+
+fn is_option_type(ty: &Type) -> bool {
+    match ty {
+        Type::Option(_) => true,
+        _ => false,
     }
 }

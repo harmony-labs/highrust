@@ -1,14 +1,1 @@
-// Demonstrates variables and basic expressions in HighRust
-// Transpiled to Rust by HighRust
-
-fn calculate_area(width: i32, height: i32) -> i32 {
-    let area = width * height;
-    return area;
-}
-
-fn main() {
-    let x = 5;
-    let y = 10;
-    let result = calculate_area(x, y);
-    println!("The area is: {}", result);
-}
+// Failed to parse HighRust code: PestError(Error { variant: ParsingError { positives: [expr_stmt], negatives: [] }, location: Pos(100), line_col: Pos((4, 5)), path: None, line: "    let area = width * height;", continued_line: None, parse_attempts: None })

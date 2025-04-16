@@ -20,11 +20,11 @@ fn test_option_mapping() {
         params: vec![
             Param {
                 name: "x".to_string(),
-                ty: Some(Type::Named("Option".to_string(), vec![Type::Named("i32".to_string(), vec![])])),
+                ty: Some(Type::Option(Box::new(Type::Named("i32".to_string(), vec![])))),
                 span: span.clone(),
             }
         ],
-        ret_type: Some(Type::Named("Option".to_string(), vec![Type::Named("i32".to_string(), vec![])])),
+        ret_type: Some(Type::Option(Box::new(Type::Named("i32".to_string(), vec![])))),
         body: Block {
             stmts: vec![
                 Stmt::Return(Some(Expr::Variable("x".to_string(), span.clone())), span.clone())
@@ -49,7 +49,7 @@ fn test_option_mapping() {
 
 #[test]
 fn test_result_mapping() {
-    // fn test_result(x: i32) -> Result<i32, String> { if x > 0 { Ok(x) } else { Err(\"bad\") } }
+    // fn test_result(x: i32) -> Result<i32, String> { if x > 0 { Ok(x) } else { Err("bad") } }
     let span = test_span();
     let func = FunctionDef {
         name: "test_result".to_string(),
@@ -60,10 +60,10 @@ fn test_result_mapping() {
                 span: span.clone(),
             }
         ],
-        ret_type: Some(Type::Named("Result".to_string(), vec![
-            Type::Named("i32".to_string(), vec![]),
-            Type::Named("String".to_string(), vec![]),
-        ])),
+        ret_type: Some(Type::Result(
+            Box::new(Type::Named("i32".to_string(), vec![])),
+            Box::new(Type::Named("String".to_string(), vec![])),
+        )),
         body: Block {
             stmts: vec![
                 Stmt::If {
@@ -158,4 +158,74 @@ fn test_lifetime_inference() {
     let code = generate_rust_code(&lowered, &mut ctx).unwrap();
     assert!(code.contains("fn get_ref<'a>"), "Generated code should have lifetime parameter: {}", code);
     assert!(code.contains("&'a i32"), "Generated code should use lifetime in type: {}", code);
+}
+
+#[test]
+fn test_result_propagation() {
+    // fn get_val() -> Result<i32, String> { Ok(42) }
+    // fn wrapper() -> Result<i32, String> { let v = get_val()?; Ok(v) }
+    let span = test_span();
+    let get_val_func = FunctionDef {
+        name: "get_val".to_string(),
+        params: vec![],
+        ret_type: Some(Type::Result(
+            Box::new(Type::Named("i32".to_string(), vec![])),
+            Box::new(Type::Named("String".to_string(), vec![])),
+        )),
+        body: Block {
+            stmts: vec![Stmt::Return(
+                Some(Expr::Call {
+                    func: Box::new(Expr::Variable("Ok".to_string(), span.clone())),
+                    args: vec![Expr::Literal(Literal::Int(42), span.clone())],
+                    span: span.clone(),
+                }),
+                span.clone()
+            )],
+            span: span.clone(),
+        },
+        is_async: false,
+        is_rust: false,
+        span: span.clone(),
+    };
+    let wrapper_func = FunctionDef {
+        name: "wrapper".to_string(),
+        params: vec![],
+        ret_type: Some(Type::Result(
+            Box::new(Type::Named("i32".to_string(), vec![])),
+            Box::new(Type::Named("String".to_string(), vec![])),
+        )),
+        body: Block {
+            stmts: vec![
+                Stmt::Let {
+                    pattern: Pattern::Variable("v".to_string(), span.clone()),
+                    value: Expr::Try(
+                        Box::new(Expr::Call {
+                            func: Box::new(Expr::Variable("get_val".to_string(), span.clone())),
+                            args: vec![],
+                            span: span.clone(),
+                        }),
+                        span.clone(),
+                    ),
+                    ty: None,
+                    span: span.clone(),
+                },
+                Stmt::Return(Some(Expr::Variable("v".to_string(), span.clone())), span.clone()),
+            ],
+            span: span.clone(),
+        },
+        is_async: false,
+        is_rust: false,
+        span: span.clone(),
+    };
+    let module = Module {
+        items: vec![ModuleItem::Function(get_val_func), ModuleItem::Function(wrapper_func)],
+        span: test_span(),
+    };
+    let ownership_inference = OwnershipInference::new();
+    let analysis_result = ownership_inference.analyze_module(&module);
+    let lowered = lower_module(&module).unwrap();
+    let mut ctx = CodegenContext::with_analysis(analysis_result);
+    let code = generate_rust_code(&lowered, &mut ctx).unwrap();
+    assert!(code.contains("get_val()?"), "Generated code should use ? operator for propagation: {}", code);
+    assert!(code.contains("Result"), "Generated code should use Result type: {}", code);
 }

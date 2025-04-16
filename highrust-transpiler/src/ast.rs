@@ -249,12 +249,10 @@ pub struct EmbeddedRustBlock {
 /// Type annotation.
 #[derive(Debug, Clone)]
 pub enum Type {
-    Named(String, Vec<Type>), // e.g., Foo, Option<T>
-    Function {
-        params: Vec<Type>,
-        ret: Box<Type>,
-    },
+    Named(String, Vec<Type>), // e.g., Foo, Option<T>, Result<T, E>
+    Option(Box<Type>),        // Option<T>
+    Result(Box<Type>, Box<Type>), // Result<T, E>
     Tuple(Vec<Type>),
     Array(Box<Type>),
-    // Add more as needed (e.g., generics, trait bounds)
+    // TODO: Function types, generics, etc.
 }
