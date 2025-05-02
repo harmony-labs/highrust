@@ -8,4 +8,4 @@ authors = ["HighRust Core Engineering"]
 pest = "2.7"
 pest_derive = "2.7"
 thiserror = "1.0"
-rand = "0.8.5"
+rand = "0.9.0"
