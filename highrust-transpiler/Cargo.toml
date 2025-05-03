@@ -7,5 +7,5 @@ authors = ["HighRust Core Engineering"]
 [dependencies]
 pest = "2.7"
 pest_derive = "2.7"
-thiserror = "1.0"
+thiserror = "2.0"
 rand = "0.8.5"
